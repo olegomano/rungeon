@@ -1,0 +1,13 @@
+module(name = "rungeon")
+bazel_dep(name = "rules_rust", version = "0.46.0")
+
+rust = use_extension("@rules_rust//rust:extensions.bzl", "rust")
+rust.toolchain(edition = "2021")
+use_repo(rust, "rust_toolchains")
+
+register_toolchains("@rust_toolchains//:all")
+
+crate = use_extension("@rules_rust//crate_universe:extensions.bzl", "crate")
+crate.spec(package = "nalgebra", version = "0.33.2")
+crate.from_specs()
+use_repo(crate, "crates")
