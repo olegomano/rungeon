@@ -1,11 +1,14 @@
 load("@rules_rust//rust:defs.bzl", "rust_binary")
 load("@rules_rust//rust:defs.bzl", "rust_library")
-
 package(default_visibility = ["//visibility:public"])
 
 rust_binary(
     name = "main",
     srcs = ["main.rs"],
+    deps = [
+      ":handle",
+      ":sparce_buffer"
+    ]
 )
 
 rust_library(
@@ -14,8 +17,24 @@ rust_library(
 )
 
 rust_library(
+  name = "transform",
+  srcs = ["transform.rs"],
+  deps = [
+    "@crates//:nalgebra"
+  ]
+)
+
+rust_library(
   name = "sparce_buffer",
   srcs = ["sparce_buffer.rs"],
+  deps = [
+    ":handle"
+  ]
+)
+
+rust_library(
+  name = "handle_links",
+  srcs = ["handle_links.rs"],
   deps = [
     ":handle"
   ]
