@@ -65,3 +65,9 @@ impl<T> fmt::Display for handle_t<T> {
         return write!(f, "Node: {} Index: {}", self.Node(), self.Instance());
     }
 }
+
+impl<T> Default for handle_t<T> {
+    fn default() -> Self {
+        Self::null()
+    }
+}

@@ -17,10 +17,28 @@ rust_library(
 )
 
 rust_library(
+  name = "input",
+  srcs = ["input.rs"],
+  deps = [
+    "@crates//:nalgebra"
+  ]
+)
+
+rust_library(
   name = "transform",
   srcs = ["transform.rs"],
   deps = [
     "@crates//:nalgebra"
+  ]
+)
+
+rust_library(
+  name = "platform",
+  srcs = ["platform.rs"],
+  deps = [
+    "@crates//:nalgebra",
+    ":input",
+    ":transform"
   ]
 )
 

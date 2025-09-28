@@ -32,7 +32,7 @@ impl handle_uuid {
  * queries against
  */
 pub struct LinkTable {
-    link_map: HashMap<handle_uuid, HashMap<i32, handle_uuid>>,
+    link_map: HashMap<handle_uuid, HashMap<TypeId, Vec<handle_uuid>>>,
 }
 
 impl LinkTable {
@@ -42,10 +42,40 @@ impl LinkTable {
         };
     }
 
-    pub fn Link<A, B>(&mut self, h1: handle::handle_t<A>, h2: handle::handle_t<B>) {
+    /**
+     * There is hard assumption that there is only one link per type
+     * IE we can't link two drawables to the same transform
+     */
+    pub fn Link<A: 'static, B: 'static>(
+        &mut self,
+        h1: handle::handle_t<A>,
+        h2: handle::handle_t<B>,
+    ) {
         let h1_uuid = handle_uuid::From(h1);
         let h2_uuid = handle_uuid::From(h2);
+
+        self.link_map
+            .entry(h1_uuid)
+            .or_insert_with(|| HashMap::new())
+            .entry(TypeId::of::<B>())
+            .or_insert_with(|| Vec::new())
+            .push(h2_uuid);
     }
 
-    pub fn GetLinkedHandle<A, B>(&self, h1: handle::handle_t<A>) -> handle::handle_t<B> {}
+    pub fn GetLinkedHandles<A: 'static, B: 'static>(
+        &self,
+        h1: handle::handle_t<A>,
+    ) -> Vec<handle::handle_t<B>> {
+        let h1_uuid = handle_uuid::From(h1);
+        let type_id_b = std::any::TypeId::of::<B>();
+        if let Some(type_map) = self.link_map.get(&h1_uuid) {
+            if let Some(vec_uuids) = type_map.get(&type_id_b) {
+                return vec_uuids
+                    .iter()
+                    .map(|uuid| handle::handle_t::<B>::new(uuid.handle_value))
+                    .collect();
+            }
+        }
+        return Vec::new();
+    }
 }

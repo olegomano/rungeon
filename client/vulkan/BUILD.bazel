@@ -1,0 +1,22 @@
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "window",
+    srcs = ["window.rs"],
+    deps = [
+        "@crates//:winit",
+    ],
+)
+
+rust_binary(
+    name = "window_example",
+    srcs = ["main.rs"],
+    deps = [
+        ":window",
+        "@crates//:winit",
+        "@crates//:vulkanalia",
+        "@crates//:anyhow",
+    ],
+)
