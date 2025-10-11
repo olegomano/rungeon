@@ -1,6 +1,7 @@
 load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library")
-
+load("//client/winit:glsl_compile.bzl", "glsl_to_rs")
 package(default_visibility = ["//visibility:public"])
+
 
 rust_library(
     name = "window",
@@ -10,11 +11,26 @@ rust_library(
     ],
 )
 
+glsl_to_rs(
+    name = "triangle_vert",
+    src = ":shader.vert",
+    out = "triangle_vert.rs",
+)
+
+
+glsl_to_rs(
+    name = "triangle_frag",
+    src = ":shader.frag",
+    out = "triangle_frag.rs",
+)
+
 rust_binary(
     name = "window_example",
     srcs = ["main.rs"],
     deps = [
         ":window",
+        ":triangle_vert",
+        ":triangle_frag",
         "@crates//:winit",
         "@crates//:vulkanalia",
         "@crates//:anyhow",
