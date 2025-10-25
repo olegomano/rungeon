@@ -1,6 +1,31 @@
 load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library")
-load("//client/winit:glsl_compile.bzl", "glsl_to_rs")
+load("//client/winit:glsl_compile.bzl", "embed_rs")
+load("//client/winit:glsl_compile.bzl", "glsl_to_spirv")
 package(default_visibility = ["//visibility:public"])
+
+
+
+glsl_to_spirv(
+    name = "fragment_shader",
+    src = ":shader.frag",
+)
+
+glsl_to_spirv(
+    name = "vertex_shader",
+    src = ":shader.vert",
+)
+
+embed_rs(
+    name = "rust_vertex_shader",
+    src = ":vertex_shader",
+    var_name = "VERT_SHADER",
+)
+
+embed_rs(
+    name = "rust_fragment_shader",
+    src = ":fragment_shader",
+    var_name = "FRAG_SHADER",
+)
 
 
 rust_library(
@@ -11,26 +36,11 @@ rust_library(
     ],
 )
 
-glsl_to_rs(
-    name = "triangle_vert",
-    src = ":shader.vert",
-    out = "triangle_vert.rs",
-)
-
-
-glsl_to_rs(
-    name = "triangle_frag",
-    src = ":shader.frag",
-    out = "triangle_frag.rs",
-)
-
 rust_binary(
     name = "window_example",
-    srcs = ["main.rs"],
+    srcs = ["main.rs", ":rust_vertex_shader", ":rust_fragment_shader"],
     deps = [
         ":window",
-        ":triangle_vert",
-        ":triangle_frag",
         "@crates//:winit",
         "@crates//:vulkanalia",
         "@crates//:anyhow",

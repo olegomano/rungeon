@@ -1,0 +1,10 @@
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library")
+package(default_visibility = ["//visibility:public"])
+
+rust_binary(
+    name = "embed_rs",
+    srcs = ["embed_rs.rs"],
+    deps = [
+        "@crates//:clap",
+    ]
+)

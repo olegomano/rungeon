@@ -3,6 +3,7 @@ use anyhow::Result;
 use std::collections::HashSet;
 use std::ffi::CStr;
 use std::os::raw::c_void;
+use vulkanalia::bytecode::Bytecode;
 use vulkanalia::loader::{LibloadingLoader, LIBRARY};
 use vulkanalia::prelude::v1_0::*;
 use vulkanalia::vk::ExtDebugUtilsExtension;
@@ -15,8 +16,8 @@ use winit::event_loop::ControlFlow;
 use winit::event_loop::EventLoop;
 use winit::platform::wayland::WindowExtWayland;
 
-extern crate triangle_frag;
-extern crate triangle_vert;
+mod rust_fragment_shader;
+mod rust_vertex_shader;
 
 // This struct holds the Vulkan resources that need initialization
 #[derive(Debug)]
@@ -33,6 +34,7 @@ struct VulkanContext {
     swapchain: vk::SwapchainKHR,
     swapchain_images: Vec<vk::Image>,
     swapchain_image_views: Vec<vk::ImageView>,
+    pipeline_layout: vk::PipelineLayout,
 }
 
 impl VulkanContext {
@@ -88,6 +90,7 @@ impl VulkanContext {
             })
             .collect::<Vec<_>>();
 
+        let pipeline_layout = Self::create_render_pipeline(window, &logical_device);
         /*
          * Assume graphics and and present queues are the same for now
          */
@@ -102,6 +105,7 @@ impl VulkanContext {
             swapchain: swapchain,
             swapchain_images: swapchain_images,
             swapchain_image_views: swapchain_image_views,
+            pipeline_layout: pipeline_layout,
         };
     }
 
@@ -164,6 +168,101 @@ impl VulkanContext {
         return logical_device
             .create_swapchain_khr(&info, None)
             .expect("Failed to create swapchain");
+    }
+
+    unsafe fn create_render_pipeline(
+        window: &winit::window::Window,
+        logical_device: &Device,
+    ) -> vk::PipelineLayout {
+        let vert_stage = vk::PipelineShaderStageCreateInfo::builder()
+            .stage(vk::ShaderStageFlags::VERTEX)
+            .module(Self::create_shader_module(
+                logical_device,
+                rust_vertex_shader::VERT_SHADER,
+            ))
+            .name(b"main\0");
+
+        let frag_stage = vk::PipelineShaderStageCreateInfo::builder()
+            .stage(vk::ShaderStageFlags::FRAGMENT)
+            .module(Self::create_shader_module(
+                logical_device,
+                rust_fragment_shader::FRAG_SHADER,
+            ))
+            .name(b"main\0");
+
+        let vertex_input_state = vk::PipelineVertexInputStateCreateInfo::builder();
+
+        // Input Assembly State
+
+        let input_assembly_state = vk::PipelineInputAssemblyStateCreateInfo::builder()
+            .topology(vk::PrimitiveTopology::TRIANGLE_LIST)
+            .primitive_restart_enable(false);
+
+        let extent = vk::Extent2D::builder()
+            .width(window.inner_size().width)
+            .height(window.inner_size().height)
+            .build();
+
+        let viewport = vk::Viewport::builder()
+            .x(0.0)
+            .y(0.0)
+            .width(extent.width as f32)
+            .height(extent.height as f32)
+            .min_depth(0.0)
+            .max_depth(1.0);
+
+        let scissor = vk::Rect2D::builder()
+            .offset(vk::Offset2D { x: 0, y: 0 })
+            .extent(extent);
+
+        let viewports = &[viewport];
+        let scissors = &[scissor];
+        let viewport_state = vk::PipelineViewportStateCreateInfo::builder()
+            .viewports(viewports)
+            .scissors(scissors);
+
+        let rasterization_state = vk::PipelineRasterizationStateCreateInfo::builder()
+            .depth_clamp_enable(false)
+            .rasterizer_discard_enable(false)
+            .polygon_mode(vk::PolygonMode::FILL)
+            .line_width(1.0)
+            .cull_mode(vk::CullModeFlags::BACK)
+            .front_face(vk::FrontFace::CLOCKWISE)
+            .depth_bias_enable(false);
+
+        // Multisample State
+
+        let multisample_state = vk::PipelineMultisampleStateCreateInfo::builder()
+            .sample_shading_enable(false)
+            .rasterization_samples(vk::SampleCountFlags::_1);
+
+        // Color Blend State
+
+        let attachment = vk::PipelineColorBlendAttachmentState::builder()
+            .color_write_mask(vk::ColorComponentFlags::all())
+            .blend_enable(false);
+
+        let attachments = &[attachment];
+        let color_blend_state = vk::PipelineColorBlendStateCreateInfo::builder()
+            .logic_op_enable(false)
+            .logic_op(vk::LogicOp::COPY)
+            .attachments(attachments)
+            .blend_constants([0.0, 0.0, 0.0, 0.0]);
+
+        let layout_info = vk::PipelineLayoutCreateInfo::builder();
+        return logical_device
+            .create_pipeline_layout(&layout_info, None)
+            .expect("Failed to create pipeline layout");
+    }
+
+    unsafe fn create_shader_module(device: &Device, bytecode: &[u8]) -> vk::ShaderModule {
+        let code = Bytecode::new(bytecode).expect("Failed to create bytecode from shader");
+        let info = vk::ShaderModuleCreateInfo::builder()
+            .code(bytecode.align_to::<u32>().1)
+            .code_size(bytecode.len());
+        return device
+            .create_shader_module(&info, None)
+            .expect("Failed to create shader module");
     }
 
     //print all the devices and choose the first one
@@ -300,9 +399,6 @@ impl window::WinitRenderer for ExampleRenderer {
 }
 
 fn main() {
-    let frag = triangle_frag::SHADER;
-    let vert = triangle_vert::SHADER;
-
     let renderer = ExampleRenderer::default();
     WinitApp::new(renderer).Run();
 }
