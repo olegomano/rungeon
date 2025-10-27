@@ -34,7 +34,16 @@ struct VulkanContext {
     swapchain: vk::SwapchainKHR,
     swapchain_images: Vec<vk::Image>,
     swapchain_image_views: Vec<vk::ImageView>,
-    pipeline_layout: vk::PipelineLayout,
+    framebuffers: Vec<vk::Framebuffer>,
+
+    pipeline: vk::Pipeline,
+    render_pass: vk::RenderPass,
+
+    command_pool: vk::CommandPool,
+    command_buffers: Vec<vk::CommandBuffer>,
+
+    image_available_semaphore: vk::Semaphore,
+    render_finished_semaphore: vk::Semaphore,
 }
 
 impl VulkanContext {
@@ -57,7 +66,7 @@ impl VulkanContext {
         let surface = vk_window::create_surface(&instance, &window, &window)
             .expect("Failed to create surface");
 
-        let swapchain =
+        let (swapchain, surface_format, swapchain_extent) =
             Self::create_swapchain(window, &instance, &logical_device, physical_device, surface);
         let swapchain_images = logical_device
             .get_swapchain_images_khr(swapchain)
@@ -90,7 +99,49 @@ impl VulkanContext {
             })
             .collect::<Vec<_>>();
 
-        let pipeline_layout = Self::create_render_pipeline(window, &logical_device);
+        let render_pass = Self::create_render_pass(&logical_device, &instance, surface_format);
+        let pipeline = Self::create_render_pipeline(window, &logical_device, render_pass);
+
+        let framebuffers = swapchain_image_views
+            .iter()
+            .map(|i| {
+                let attachments = &[*i];
+                let create_info = vk::FramebufferCreateInfo::builder()
+                    .render_pass(render_pass)
+                    .attachments(attachments)
+                    .width(swapchain_extent.width)
+                    .height(swapchain_extent.height)
+                    .layers(1);
+
+                return logical_device.create_framebuffer(&create_info, None);
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .expect("Failed to create framebuffers");
+
+        let command_pool_info = vk::CommandPoolCreateInfo::builder().queue_family_index(
+            Self::find_queue_index(&instance, physical_device, vk::QueueFlags::GRAPHICS)
+                .expect("Failed to find graphics queue index") as u32,
+        );
+        let command_pool = logical_device
+            .create_command_pool(&command_pool_info, None)
+            .expect("Failed to create command pool");
+
+        let command_buffers = Self::create_command_buffers(
+            &logical_device,
+            pipeline,
+            render_pass,
+            &framebuffers,
+            command_pool,
+            swapchain_extent,
+        );
+
+        let semaphore_info = vk::SemaphoreCreateInfo::builder();
+        let image_available_semaphore = logical_device
+            .create_semaphore(&semaphore_info, None)
+            .expect("Failed to create semaphore");
+        let render_finished_semaphore = logical_device
+            .create_semaphore(&semaphore_info, None)
+            .expect("Failed to create semaphore");
         /*
          * Assume graphics and and present queues are the same for now
          */
@@ -105,7 +156,16 @@ impl VulkanContext {
             swapchain: swapchain,
             swapchain_images: swapchain_images,
             swapchain_image_views: swapchain_image_views,
-            pipeline_layout: pipeline_layout,
+            framebuffers: framebuffers,
+
+            pipeline: pipeline,
+            render_pass: render_pass,
+
+            command_pool: command_pool,
+            command_buffers: command_buffers,
+
+            image_available_semaphore: image_available_semaphore,
+            render_finished_semaphore: render_finished_semaphore,
         };
     }
 
@@ -115,7 +175,7 @@ impl VulkanContext {
         logical_device: &Device,
         physical_device: vk::PhysicalDevice,
         surface: vk::SurfaceKHR,
-    ) -> vk::SwapchainKHR {
+    ) -> (vk::SwapchainKHR, vk::Format, vk::Extent2D) {
         let surface_capabilities = instance
             .get_physical_device_surface_capabilities_khr(physical_device, surface)
             .expect("Failed to get surface capabilities");
@@ -165,15 +225,20 @@ impl VulkanContext {
             .clipped(true)
             .old_swapchain(vk::SwapchainKHR::null());
 
-        return logical_device
-            .create_swapchain_khr(&info, None)
-            .expect("Failed to create swapchain");
+        return (
+            logical_device
+                .create_swapchain_khr(&info, None)
+                .expect("Failed to create swapchain"),
+            surface_format.format,
+            extent,
+        );
     }
 
     unsafe fn create_render_pipeline(
         window: &winit::window::Window,
         logical_device: &Device,
-    ) -> vk::PipelineLayout {
+        render_pass: vk::RenderPass,
+    ) -> vk::Pipeline {
         let vert_stage = vk::PipelineShaderStageCreateInfo::builder()
             .stage(vk::ShaderStageFlags::VERTEX)
             .module(Self::create_shader_module(
@@ -250,9 +315,124 @@ impl VulkanContext {
             .blend_constants([0.0, 0.0, 0.0, 0.0]);
 
         let layout_info = vk::PipelineLayoutCreateInfo::builder();
-        return logical_device
+        let layout = logical_device
             .create_pipeline_layout(&layout_info, None)
             .expect("Failed to create pipeline layout");
+
+        let stages = &[vert_stage, frag_stage];
+        let info = vk::GraphicsPipelineCreateInfo::builder()
+            .stages(stages)
+            .vertex_input_state(&vertex_input_state)
+            .input_assembly_state(&input_assembly_state)
+            .viewport_state(&viewport_state)
+            .rasterization_state(&rasterization_state)
+            .multisample_state(&multisample_state)
+            .color_blend_state(&color_blend_state)
+            .layout(layout)
+            .render_pass(render_pass)
+            .subpass(0);
+
+        return logical_device
+            .create_graphics_pipelines(vk::PipelineCache::null(), &[info], None)
+            .expect("Failed to create graphics pipeline")
+            .0[0];
+    }
+
+    unsafe fn create_render_pass(
+        device: &Device,
+        instance: &Instance,
+        surface_format: vk::Format,
+    ) -> vk::RenderPass {
+        let color_attachment = vk::AttachmentDescription::builder()
+            .format(surface_format)
+            .samples(vk::SampleCountFlags::_1)
+            .load_op(vk::AttachmentLoadOp::CLEAR)
+            .store_op(vk::AttachmentStoreOp::STORE)
+            .stencil_load_op(vk::AttachmentLoadOp::DONT_CARE)
+            .stencil_store_op(vk::AttachmentStoreOp::DONT_CARE)
+            .initial_layout(vk::ImageLayout::UNDEFINED)
+            .final_layout(vk::ImageLayout::PRESENT_SRC_KHR);
+
+        // Subpasses
+
+        let color_attachment_ref = vk::AttachmentReference::builder()
+            .attachment(0)
+            .layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL);
+
+        let color_attachments = &[color_attachment_ref];
+        let subpass = vk::SubpassDescription::builder()
+            .pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS)
+            .color_attachments(color_attachments);
+
+        // Create
+
+        let attachments = &[color_attachment];
+        let subpasses = &[subpass];
+        let info = vk::RenderPassCreateInfo::builder()
+            .attachments(attachments)
+            .subpasses(subpasses);
+
+        return device
+            .create_render_pass(&info, None)
+            .expect("Failed to create render pass");
+    }
+
+    unsafe fn create_command_buffers(
+        device: &Device,
+        pipeline: vk::Pipeline,
+        render_pass: vk::RenderPass,
+        framebuffers: &Vec<vk::Framebuffer>,
+        command_pool: vk::CommandPool,
+        extent: vk::Extent2D,
+    ) -> Vec<vk::CommandBuffer> {
+        // Allocate
+
+        let allocate_info = vk::CommandBufferAllocateInfo::builder()
+            .command_pool(command_pool)
+            .level(vk::CommandBufferLevel::PRIMARY)
+            .command_buffer_count(framebuffers.len() as u32);
+
+        let command_buffers = device
+            .allocate_command_buffers(&allocate_info)
+            .expect("Failed to allocate command buffers");
+
+        // Commands
+
+        for (i, command_buffer) in command_buffers.iter().enumerate() {
+            let info = vk::CommandBufferBeginInfo::builder();
+
+            device
+                .begin_command_buffer(*command_buffer, &info)
+                .expect("Failed to begin command buffer");
+
+            let render_area = vk::Rect2D::builder()
+                .offset(vk::Offset2D::default())
+                .extent(extent);
+
+            let color_clear_value = vk::ClearValue {
+                color: vk::ClearColorValue {
+                    float32: [0.0, 0.0, 0.0, 1.0],
+                },
+            };
+
+            let clear_values = &[color_clear_value];
+            let info = vk::RenderPassBeginInfo::builder()
+                .render_pass(render_pass)
+                .framebuffer(framebuffers[i])
+                .render_area(render_area)
+                .clear_values(clear_values);
+
+            device.cmd_begin_render_pass(*command_buffer, &info, vk::SubpassContents::INLINE);
+            device.cmd_bind_pipeline(*command_buffer, vk::PipelineBindPoint::GRAPHICS, pipeline);
+            device.cmd_draw(*command_buffer, 3, 1, 0, 0);
+            device.cmd_end_render_pass(*command_buffer);
+
+            device
+                .end_command_buffer(*command_buffer)
+                .expect("Failed to end command buffer");
+        }
+
+        return command_buffers;
     }
 
     unsafe fn create_shader_module(device: &Device, bytecode: &[u8]) -> vk::ShaderModule {
@@ -393,7 +573,61 @@ impl window::WinitRenderer for ExampleRenderer {
         self.InitVulkan(window);
     }
 
-    fn Render(&mut self) {}
+    fn Render(&mut self) {
+        if let Some(context) = &self.context {
+            unsafe {
+                let device = &self.context.as_ref().unwrap().logical_device;
+                let swapchain = self.context.as_ref().unwrap().swapchain;
+                let command_buffers = &self.context.as_ref().unwrap().command_buffers;
+                let image_available_semaphore =
+                    self.context.as_ref().unwrap().image_available_semaphore;
+                let render_finished_semaphore =
+                    self.context.as_ref().unwrap().render_finished_semaphore;
+
+                let (image_index, _) = device
+                    .acquire_next_image_khr(
+                        swapchain,
+                        std::u64::MAX,
+                        image_available_semaphore,
+                        vk::Fence::null(),
+                    )
+                    .expect("Failed to acquire next image");
+
+                let wait_semaphores = &[image_available_semaphore];
+                let signal_semaphores = &[render_finished_semaphore];
+                let command_buffers_to_submit = &[command_buffers[image_index as usize]];
+
+                let submit_info = vk::SubmitInfo::builder()
+                    .wait_semaphores(wait_semaphores)
+                    .wait_dst_stage_mask(&[vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT])
+                    .command_buffers(command_buffers_to_submit)
+                    .signal_semaphores(signal_semaphores);
+
+                device
+                    .queue_submit(
+                        self.context.as_ref().unwrap().graphics_queue,
+                        &[submit_info],
+                        vk::Fence::null(),
+                    )
+                    .expect("Failed to submit to queue");
+
+                let swapchains = &[swapchain];
+                let image_indices = &[image_index];
+                let present_info = vk::PresentInfoKHR::builder()
+                    .wait_semaphores(signal_semaphores)
+                    .swapchains(swapchains)
+                    .image_indices(image_indices);
+
+                device
+                    .queue_present_khr(self.context.as_ref().unwrap().present_queue, &present_info)
+                    .expect("Failed to present queue");
+
+                device
+                    .queue_wait_idle(self.context.as_ref().unwrap().present_queue)
+                    .expect("Failed to wait queue idle");
+            }
+        }
+    }
     fn Tick(&mut self) {}
     fn OnKeyboardInput(&mut self, input: &KeyEvent) {}
 }
