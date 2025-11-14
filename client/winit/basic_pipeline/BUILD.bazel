@@ -26,6 +26,7 @@ embed_rs(
     var_name = "FRAG_SHADER",
 )
 
+
 rust_library(
     name = "pipeline",
     srcs = ["pipeline.rs",":rust_fragment_shader",":rust_vertex_shader"],
@@ -33,6 +34,8 @@ rust_library(
         "@crates//:vulkanalia",
         "@crates//:winit",
         "//client/winit:vulkan_context",
+        "//client/winit:vulkan_buffer",
+        "//client/winit:primitives",
     ],
 )
 

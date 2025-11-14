@@ -16,8 +16,7 @@ use winit::event_loop::ControlFlow;
 use winit::event_loop::EventLoop;
 use winit::platform::wayland::WindowExtWayland;
 
-mod rust_fragment_shader;
-mod rust_vertex_shader;
+extern crate rust_shader;
 
 // This struct holds the Vulkan resources that need initialization
 #[derive(Debug)]

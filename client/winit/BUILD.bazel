@@ -19,15 +19,41 @@ rust_library(
     ],
 )
 
+rust_library(
+    name = "vulkan_buffer",
+    srcs = ["vulkan_buffer.rs"],
+    deps = [
+        "@crates//:vulkanalia",
+        ":vulkan_context"
+    ],
+)
 
+
+rust_library(
+    name = "primitives",
+    srcs = ["primitives.rs"],
+)
 
 rust_binary(
     name = "window_example",
-    srcs = ["main.rs", ":rust_vertex_shader", ":rust_fragment_shader"],
+    srcs = ["main.rs"],
     deps = [
         ":window",
         "@crates//:winit",
         "@crates//:vulkanalia",
         "@crates//:anyhow",
+        "//client/winit/basic_pipeline:rust_shader"
+    ],
+)
+
+rust_binary(
+    name = "vulkan_window_main",
+    srcs = ["vulkan_window.rs"],
+    deps = [
+        ":window",
+        "@crates//:winit",
+        "@crates//:vulkanalia",
+        ":vulkan_context",
+        "//client/winit/basic_pipeline:pipeline"
     ],
 )

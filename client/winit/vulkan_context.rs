@@ -32,7 +32,7 @@ impl VulkanContext {
     const VALIDATION_LAYER: vk::ExtensionName =
         vk::ExtensionName::from_bytes(b"VK_LAYER_KHRONOS_validation");
 
-    unsafe fn new(window: &winit::window::Window) -> Self {
+    pub unsafe fn new(window: &winit::window::Window) -> Self {
         let loader = LibloadingLoader::new(LIBRARY).expect("Failed to load Vulkan library");
         let entry = Entry::new(loader).expect("Failed to create entry");
         let instance = Self::create_instance(window, &entry);
