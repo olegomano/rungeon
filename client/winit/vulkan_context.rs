@@ -24,6 +24,8 @@ pub struct VulkanContext {
     pub graphics_queue_index: i32,
     pub graphics_queue: vk::Queue,
     pub present_queue: vk::Queue,
+
+    pub descriptor_pool: vk::DescriptorPool,
 }
 
 impl VulkanContext {
@@ -42,6 +44,7 @@ impl VulkanContext {
             Self::find_queue_index(&instance, physical_device, vk::QueueFlags::GRAPHICS);
 
         let graphics_queue = logical_device.get_device_queue(graphics_queue_index as u32, 0);
+        let descriptor_pool = Self::create_descriptor_pool(&logical_device);
         let surface = vk_window::create_surface(&instance, &window, &window)
             .expect("Failed to create surface");
 
@@ -54,6 +57,7 @@ impl VulkanContext {
             graphics_queue_index,
             graphics_queue,
             present_queue: graphics_queue,
+            descriptor_pool: descriptor_pool,
         };
     }
 
@@ -66,6 +70,31 @@ impl VulkanContext {
             .logical_device
             .create_shader_module(&info, None)
             .expect("Failed to create shader module");
+    }
+
+    unsafe fn create_descriptor_pool(logical_device: &Device) -> vk::DescriptorPool {
+        // --- Define the total capacity of individual descriptors ---
+        let pool_sizes = vec![
+            // 1. Uniform Buffers (e.g., for 100 per-object matrices)
+            vk::DescriptorPoolSize::builder()
+                .type_(vk::DescriptorType::UNIFORM_BUFFER)
+                .descriptor_count(100),
+            // 2. Combined Image Samplers (e.g., for 50 textures)
+            vk::DescriptorPoolSize::builder()
+                .type_(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                .descriptor_count(50),
+            // You would add other types like STORAGE_BUFFER, etc., here if needed.
+        ];
+        let max_sets = 200;
+        let info = vk::DescriptorPoolCreateInfo::builder()
+            .flags(vk::DescriptorPoolCreateFlags::empty()) // Can add flags like FREE_DESCRIPTOR_SET
+            .max_sets(max_sets)
+            .pool_sizes(&pool_sizes)
+            .build();
+
+        return logical_device
+            .create_descriptor_pool(&info, None)
+            .expect("Failed to create descriptor pool");
     }
 
     //print all the devices and choose the first one

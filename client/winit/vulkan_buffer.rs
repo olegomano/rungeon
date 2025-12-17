@@ -13,17 +13,22 @@ use vulkan_context::VulkanContext;
 * Buffer is like a typed pointer, ie the data descriptor
 * DeviceMemory is the actual pointer to the data
 */
-pub struct VertexBuffer {
+#[derive(Debug)]
+pub struct VulkanBuffer {
     pub buffer: vk::Buffer,
     pub vertex_buffer_memory: vk::DeviceMemory,
     pub size: usize,
 }
 
-impl VertexBuffer {
-    pub unsafe fn new(context: &VulkanContext, size: usize) -> VertexBuffer {
+impl VulkanBuffer {
+    pub unsafe fn new(
+        context: &VulkanContext,
+        buffer_type: vk::BufferUsageFlags,
+        size: usize,
+    ) -> VulkanBuffer {
         let buffer_info = vk::BufferCreateInfo::builder()
             .size(size as u64)
-            .usage(vk::BufferUsageFlags::VERTEX_BUFFER)
+            .usage(buffer_type)
             .sharing_mode(vk::SharingMode::EXCLUSIVE)
             .build();
 
@@ -60,8 +65,12 @@ impl VertexBuffer {
             .logical_device
             .allocate_memory(&memory_info, None)
             .expect("");
+        context
+            .logical_device
+            .bind_buffer_memory(buffer, vertex_buffer_memory, 0)
+            .expect("");
 
-        return VertexBuffer {
+        return VulkanBuffer {
             buffer: buffer,
             vertex_buffer_memory: vertex_buffer_memory,
             size: size,
@@ -69,11 +78,6 @@ impl VertexBuffer {
     }
 
     pub unsafe fn Write<T>(&self, data: &T, context: &VulkanContext) {
-        context
-            .logical_device
-            .bind_buffer_memory(self.buffer, self.vertex_buffer_memory, 0)
-            .expect("");
-
         let memory = context
             .logical_device
             .map_memory(
@@ -89,5 +93,33 @@ impl VertexBuffer {
         context
             .logical_device
             .unmap_memory(self.vertex_buffer_memory);
+    }
+}
+
+#[derive(Debug)]
+pub struct VulkanObject<T> {
+    pub buffer: VulkanBuffer,
+    pub data: T,
+}
+
+impl<T: Default> VulkanObject<T> {
+    pub fn new(context: &VulkanContext) -> Self {
+        unsafe {
+            return Self {
+                buffer: VulkanBuffer::new(
+                    context,
+                    vk::BufferUsageFlags::UNIFORM_BUFFER,
+                    std::mem::size_of::<T>(),
+                ),
+                data: T::default(),
+            };
+        }
+    }
+
+    //write out the current state of data to the gpu
+    pub fn Sync(&self, context: &VulkanContext) {
+        unsafe {
+            self.buffer.Write(&self.data, context);
+        }
     }
 }

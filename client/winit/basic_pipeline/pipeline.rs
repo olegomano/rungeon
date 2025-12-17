@@ -13,6 +13,9 @@ use winit::event_loop::ControlFlow;
 use winit::event_loop::EventLoop;
 use winit::platform::wayland::WindowExtWayland;
 
+extern crate nalgebra;
+use nalgebra::{Matrix4, Point3, Quaternion, Unit, UnitQuaternion, Vector3, Vector4};
+
 extern crate primitives;
 extern crate vulkan_buffer;
 extern crate vulkan_context;
@@ -27,8 +30,13 @@ struct PositionUvBinding {
     uv: vk::VertexInputAttributeDescription,
 }
 
+#[derive(Copy, Clone, Debug, Default)]
+struct CameraUbo {
+    view: Matrix4<f32>,
+}
+
 /*
-* Is a descriptor of mapping a VertexBuffer to a shader input
+* Is a descriptor of mapping a VulkanBuffer to a shader input
 */
 impl PositionUvBinding {
     unsafe fn new(binding_index: u32, vertex_location: u32, uv_location: u32) -> Self {
@@ -75,11 +83,17 @@ pub struct BasicPipeline {
 
     image_available_semaphore: vk::Semaphore,
     render_finished_semaphore: vk::Semaphore,
+
+    camera_ubo: vulkan_buffer::VulkanObject<CameraUbo>,
 }
 
 impl BasicPipeline {
     pub fn new(context: &vulkan_context::VulkanContext, window: &winit::window::Window) -> Self {
         unsafe {
+            let mut camera_ubo = vulkan_buffer::VulkanObject::<CameraUbo>::new(context);
+            camera_ubo.data.view = Matrix4::identity();
+            camera_ubo.Sync(context);
+
             let (swapchain, surface_format, swapchain_extent) =
                 Self::create_swapchain(window, context);
 
@@ -137,7 +151,11 @@ impl BasicPipeline {
                 .collect::<Result<Vec<_>, _>>()
                 .expect("Failed to create framebuffers");
 
-            let pipeline = Self::create_render_pipeline(&window, context, render_pass);
+            let (descriptor_set, descriptor_set_layout) =
+                Self::create_descriptor_set(context, &camera_ubo.buffer.buffer);
+
+            let (pipeline, pipeline_layout) =
+                Self::create_render_pipeline(&window, context, render_pass, descriptor_set_layout);
 
             let command_pool_info = vk::CommandPoolCreateInfo::builder()
                 .queue_family_index(context.graphics_queue_index as u32);
@@ -150,10 +168,12 @@ impl BasicPipeline {
             let command_buffers = Self::create_command_buffers(
                 context,
                 pipeline,
+                pipeline_layout,
                 render_pass,
                 &framebuffers,
                 command_pool,
                 swapchain_extent,
+                descriptor_set,
             );
 
             let semaphore_info = vk::SemaphoreCreateInfo::builder();
@@ -177,11 +197,12 @@ impl BasicPipeline {
                 command_buffers: command_buffers,
                 image_available_semaphore: image_available_semaphore,
                 render_finished_semaphore: render_finished_semaphore,
+                camera_ubo: camera_ubo,
             }
         }
     }
 
-    pub fn Render(&self, context: &vulkan_context::VulkanContext) {
+    pub fn Render(&mut self, context: &vulkan_context::VulkanContext) {
         unsafe {
             let (image_index, _) = context
                 .logical_device
@@ -192,6 +213,11 @@ impl BasicPipeline {
                     vk::Fence::null(),
                 )
                 .expect("Failed to acquire next image");
+
+            self.camera_ubo.data.view =
+                Matrix4::from_axis_angle(&Vector3::z_axis(), 1.0_f32.to_radians())
+                    * self.camera_ubo.data.view;
+            self.camera_ubo.Sync(context);
 
             let wait_semaphores = &[self.image_available_semaphore];
             let signal_semaphores = &[self.render_finished_semaphore];
@@ -230,10 +256,12 @@ impl BasicPipeline {
     unsafe fn create_command_buffers(
         context: &vulkan_context::VulkanContext,
         pipeline: vk::Pipeline,
+        pipeline_layout: vk::PipelineLayout,
         render_pass: vk::RenderPass,
         framebuffers: &Vec<vk::Framebuffer>,
         command_pool: vk::CommandPool,
         extent: vk::Extent2D,
+        ubo_descriptor_set: vk::DescriptorSet,
     ) -> Vec<vk::CommandBuffer> {
         // Allocate
 
@@ -247,8 +275,9 @@ impl BasicPipeline {
             .allocate_command_buffers(&allocate_info)
             .expect("Failed to allocate command buffers");
 
-        let rect = vulkan_buffer::VertexBuffer::new(
+        let rect = vulkan_buffer::VulkanBuffer::new(
             context,
+            vk::BufferUsageFlags::VERTEX_BUFFER,
             primitives::QUAD_TRIANGLES.len() * std::mem::size_of::<primitives::Vertex>(),
         );
         rect.Write(&primitives::QUAD_TRIANGLES, context);
@@ -288,6 +317,15 @@ impl BasicPipeline {
                 vk::PipelineBindPoint::GRAPHICS,
                 pipeline,
             );
+            context.logical_device.cmd_bind_descriptor_sets(
+                *command_buffer,
+                vk::PipelineBindPoint::GRAPHICS,
+                pipeline_layout,
+                0, // first_set: This is the 'set=0' index
+                &[ubo_descriptor_set],
+                &[], // dynamic_offsets: None for a static UBO
+            );
+
             context.logical_device.cmd_bind_vertex_buffers(
                 *command_buffer,
                 0,
@@ -421,7 +459,8 @@ impl BasicPipeline {
         window: &winit::window::Window,
         vulkan_context: &vulkan_context::VulkanContext,
         render_pass: vk::RenderPass,
-    ) -> vk::Pipeline {
+        descriptor_set_layout: vk::DescriptorSetLayout,
+    ) -> (vk::Pipeline, vk::PipelineLayout) {
         let vert_stage = vk::PipelineShaderStageCreateInfo::builder()
             .stage(vk::ShaderStageFlags::VERTEX)
             .module(vulkan_context.create_shader_module(rust_vertex_shader::VERT_SHADER))
@@ -434,11 +473,11 @@ impl BasicPipeline {
 
         let shader_binding = PositionUvBinding::new(0, 0, 1);
         let binding_descriptions = &[shader_binding.binding];
-        let attribute_descriptions = [shader_binding.uv, shader_binding.position];
+        let attribute_descriptions = &[shader_binding.uv, shader_binding.position];
 
         let vertex_input_state = vk::PipelineVertexInputStateCreateInfo::builder()
             .vertex_binding_descriptions(binding_descriptions)
-            .vertex_attribute_descriptions(&attribute_descriptions);
+            .vertex_attribute_descriptions(attribute_descriptions);
 
         // Input Assembly State
         let input_assembly_state = vk::PipelineInputAssemblyStateCreateInfo::builder()
@@ -496,7 +535,11 @@ impl BasicPipeline {
             .attachments(attachments)
             .blend_constants([0.0, 0.0, 0.0, 0.0]);
 
-        let layout_info = vk::PipelineLayoutCreateInfo::builder();
+        let descriptor_set_layouts = [descriptor_set_layout];
+
+        let layout_info =
+            vk::PipelineLayoutCreateInfo::builder().set_layouts(&descriptor_set_layouts);
+
         let layout = vulkan_context
             .logical_device
             .create_pipeline_layout(&layout_info, None)
@@ -515,10 +558,64 @@ impl BasicPipeline {
             .render_pass(render_pass)
             .subpass(0);
 
-        return vulkan_context
+        return (
+            vulkan_context
+                .logical_device
+                .create_graphics_pipelines(vk::PipelineCache::null(), &[info], None)
+                .expect("Failed to create graphics pipeline")
+                .0[0],
+            layout,
+        );
+    }
+
+    unsafe fn create_descriptor_set(
+        vulkan_context: &vulkan_context::VulkanContext,
+        camera_ubo: &vk::Buffer,
+    ) -> (vk::DescriptorSet, vk::DescriptorSetLayout) {
+        // Define the binding directly in the list
+        let ubo_bindings = [vk::DescriptorSetLayoutBinding::builder()
+            .binding(0)
+            .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+            .descriptor_count(1)
+            .stage_flags(vk::ShaderStageFlags::ALL_GRAPHICS)
+            .build()];
+
+        let layout_info = vk::DescriptorSetLayoutCreateInfo::builder().bindings(&ubo_bindings); // Reference the local array
+
+        let layout = vulkan_context
             .logical_device
-            .create_graphics_pipelines(vk::PipelineCache::null(), &[info], None)
-            .expect("Failed to create graphics pipeline")
-            .0[0];
+            .create_descriptor_set_layout(&layout_info, None)
+            .expect("Failed to create descriptor set layout");
+
+        // Allocate the set
+        let layouts = [layout];
+        let allocate_info = vk::DescriptorSetAllocateInfo::builder()
+            .descriptor_pool(vulkan_context.descriptor_pool)
+            .set_layouts(&layouts);
+
+        let descriptor_set = vulkan_context
+            .logical_device
+            .allocate_descriptor_sets(&allocate_info)
+            .expect("Failed to allocate descriptor sets")[0];
+
+        // Update/Write the set
+        let buffer_info = [vk::DescriptorBufferInfo::builder()
+            .buffer(*camera_ubo)
+            .offset(0)
+            .range(vk::WHOLE_SIZE as u64)
+            .build()];
+
+        let write = vk::WriteDescriptorSet::builder()
+            .dst_set(descriptor_set)
+            .dst_binding(0)
+            .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+            .buffer_info(&buffer_info); // Use reference to local array
+        let copy: [vk::CopyDescriptorSet; 0] = [];
+
+        vulkan_context
+            .logical_device
+            .update_descriptor_sets(&[*write], &copy);
+
+        (descriptor_set, layout)
     }
 }

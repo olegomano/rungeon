@@ -62,7 +62,6 @@ impl<R: WinitRenderer> ApplicationHandler for WinitApp<R> {
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _: WindowId, event: WindowEvent) {
-        println!("{event:?}");
         match event {
             WindowEvent::CloseRequested => {
                 println!("Close was requested; stopping");
@@ -78,13 +77,18 @@ impl<R: WinitRenderer> ApplicationHandler for WinitApp<R> {
             }
             WindowEvent::KeyboardInput {
                 device_id: _,
-                event: key_event,
+                event: ref key_event,
                 is_synthetic: _,
             } => {
+                println!("{event:?}");
                 self.renderer.OnKeyboardInput(&key_event);
             }
             _ => (),
         }
+        self.window
+            .as_ref()
+            .expect("redraw request without a window")
+            .request_redraw();
     }
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
