@@ -26,6 +26,32 @@ pub struct VulkanContext {
     pub present_queue: vk::Queue,
 
     pub descriptor_pool: vk::DescriptorPool,
+
+    pub swapchain: vk::SwapchainKHR,
+    pub swapchain_images: Vec<vk::Image>,
+    pub swapchain_image_views: Vec<vk::ImageView>,
+
+    pub surface_format: vk::Format,
+    pub swapchain_extent: vk::Extent2D,
+
+    // Common extracted physical device properties
+    pub device_name: String,
+    pub api_version_major: u32,
+    pub api_version_minor: u32,
+    pub api_version_patch: u32,
+    pub vendor_id: u32,
+    pub device_id: u32,
+    pub device_type: vk::PhysicalDeviceType,
+
+    // Useful limits / compute info
+    pub max_image_dimension_2d: u32,
+    pub max_compute_work_group_invocations: u32,
+    pub max_compute_work_group_size: [u32; 3],
+    pub max_compute_shared_memory_size: u32,
+
+    // Queue family compute information
+    pub compute_queue_family_count: u32,
+    pub compute_queue_count: u32,
 }
 
 impl VulkanContext {
@@ -48,6 +74,84 @@ impl VulkanContext {
         let surface = vk_window::create_surface(&instance, &window, &window)
             .expect("Failed to create surface");
 
+        let (swapchain, surface_format, swapchain_extent) = Self::create_swapchain(
+            window,
+            &physical_device,
+            &surface,
+            &logical_device,
+            &instance,
+            graphics_queue_index,
+        );
+
+        let swapchain_images = logical_device
+            .get_swapchain_images_khr(swapchain)
+            .expect("Failed to get swapchain images");
+
+        let swapchain_image_views = swapchain_images
+            .iter()
+            .map(|&image| {
+                let create_view_info = vk::ImageViewCreateInfo::builder()
+                    .image(image)
+                    .view_type(vk::ImageViewType::_2D)
+                    .format(vk::Format::B8G8R8A8_SRGB)
+                    .components(vk::ComponentMapping {
+                        r: vk::ComponentSwizzle::IDENTITY,
+                        g: vk::ComponentSwizzle::IDENTITY,
+                        b: vk::ComponentSwizzle::IDENTITY,
+                        a: vk::ComponentSwizzle::IDENTITY,
+                    })
+                    .subresource_range(
+                        vk::ImageSubresourceRange::builder()
+                            .aspect_mask(vk::ImageAspectFlags::COLOR)
+                            .base_mip_level(0)
+                            .level_count(1)
+                            .base_array_layer(0)
+                            .layer_count(1)
+                            .build(),
+                    );
+                logical_device
+                    .create_image_view(&create_view_info, None)
+                    .expect("Failed to create image view")
+            })
+            .collect::<Vec<_>>();
+
+        // Extract some common properties and limits from the chosen physical
+        // device so callers can use them without extra Vulkan calls.
+        let properties = instance.get_physical_device_properties(physical_device);
+        let device_name = unsafe { CStr::from_ptr(properties.device_name.as_ptr()) }
+            .to_string_lossy()
+            .into_owned();
+
+        let api_version = properties.api_version;
+        let api_version_major = (api_version >> 22) & 0x3ff;
+        let api_version_minor = (api_version >> 12) & 0x3ff;
+        let api_version_patch = api_version & 0xfff;
+
+        let vendor_id = properties.vendor_id;
+        let device_id = properties.device_id;
+        let device_type = properties.device_type;
+
+        let limits = properties.limits;
+        let max_image_dimension_2d = limits.max_image_dimension_2d;
+        let max_compute_work_group_invocations = limits.max_compute_work_group_invocations;
+        let max_compute_work_group_size = [
+            limits.max_compute_work_group_size[0],
+            limits.max_compute_work_group_size[1],
+            limits.max_compute_work_group_size[2],
+        ];
+        let max_compute_shared_memory_size = limits.max_compute_shared_memory_size;
+
+        // Count compute-capable queue families and sum of queue counts
+        let queue_families = instance.get_physical_device_queue_family_properties(physical_device);
+        let mut compute_queue_family_count = 0u32;
+        let mut compute_queue_count = 0u32;
+        for q in &queue_families {
+            if q.queue_flags.contains(vk::QueueFlags::COMPUTE) {
+                compute_queue_family_count += 1;
+                compute_queue_count += q.queue_count as u32;
+            }
+        }
+
         return Self {
             entry,
             instance,
@@ -58,6 +162,27 @@ impl VulkanContext {
             graphics_queue,
             present_queue: graphics_queue,
             descriptor_pool: descriptor_pool,
+            swapchain: swapchain,
+            swapchain_images: swapchain_images,
+            surface_format: surface_format,
+            swapchain_extent: swapchain_extent,
+            swapchain_image_views: swapchain_image_views,
+
+            device_name,
+            api_version_major,
+            api_version_minor,
+            api_version_patch,
+            vendor_id,
+            device_id,
+            device_type,
+
+            max_image_dimension_2d,
+            max_compute_work_group_invocations,
+            max_compute_work_group_size,
+            max_compute_shared_memory_size,
+
+            compute_queue_family_count,
+            compute_queue_count,
         };
     }
 
@@ -70,6 +195,17 @@ impl VulkanContext {
             .logical_device
             .create_shader_module(&info, None)
             .expect("Failed to create shader module");
+    }
+
+    /// Returns the VkPhysicalDeviceProperties for the selected physical device.
+    ///
+    /// This is a small safe wrapper around the raw Vulkan call so callers can
+    /// easily inspect properties such as device name, limits, and API version.
+    pub fn physical_device_properties(&self) -> vk::PhysicalDeviceProperties {
+        unsafe {
+            self.instance
+                .get_physical_device_properties(self.physical_device)
+        }
     }
 
     unsafe fn create_descriptor_pool(logical_device: &Device) -> vk::DescriptorPool {
@@ -95,6 +231,67 @@ impl VulkanContext {
         return logical_device
             .create_descriptor_pool(&info, None)
             .expect("Failed to create descriptor pool");
+    }
+
+    unsafe fn create_swapchain(
+        window: &winit::window::Window,
+        physical_device: &vk::PhysicalDevice,
+        surface: &vk::SurfaceKHR,
+        logical_device: &Device,
+        instance: &Instance,
+        graphics_queue_index: i32,
+    ) -> (vk::SwapchainKHR, vk::Format, vk::Extent2D) {
+        let surface_capabilities = instance
+            .get_physical_device_surface_capabilities_khr(*physical_device, *surface)
+            .expect("Failed to get surface capabilities");
+        let surface_formats = instance
+            .get_physical_device_surface_formats_khr(*physical_device, *surface)
+            .expect("Failed to get surface formats");
+
+        let surface_format = surface_formats
+            .iter()
+            .cloned()
+            .find(|f| {
+                f.format == vk::Format::B8G8R8A8_SRGB
+                    && f.color_space == vk::ColorSpaceKHR::SRGB_NONLINEAR
+            })
+            .unwrap_or_else(|| surface_formats[0]);
+
+        let extent = vk::Extent2D::builder()
+            .width(window.inner_size().width.clamp(
+                surface_capabilities.min_image_extent.width,
+                surface_capabilities.max_image_extent.width,
+            ))
+            .height(window.inner_size().height.clamp(
+                surface_capabilities.min_image_extent.height,
+                surface_capabilities.max_image_extent.height,
+            ))
+            .build();
+
+        let queue_indecies = [graphics_queue_index as u32];
+        let info = vk::SwapchainCreateInfoKHR::builder()
+            .surface(*surface)
+            .min_image_count(surface_capabilities.min_image_count + 1)
+            .image_format(surface_format.format)
+            .image_color_space(surface_format.color_space)
+            .image_extent(extent)
+            .image_array_layers(1)
+            .image_usage(vk::ImageUsageFlags::COLOR_ATTACHMENT)
+            .image_sharing_mode(vk::SharingMode::EXCLUSIVE)
+            .queue_family_indices(&queue_indecies)
+            .pre_transform(surface_capabilities.current_transform)
+            .composite_alpha(vk::CompositeAlphaFlagsKHR::OPAQUE)
+            .present_mode(vk::PresentModeKHR::FIFO)
+            .clipped(true)
+            .old_swapchain(vk::SwapchainKHR::null());
+
+        return (
+            logical_device
+                .create_swapchain_khr(&info, None)
+                .expect("Failed to create swapchain"),
+            surface_format.format,
+            extent,
+        );
     }
 
     //print all the devices and choose the first one

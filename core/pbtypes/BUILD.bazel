@@ -1,0 +1,17 @@
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library")
+load("@rules_proto//proto:defs.bzl", "proto_library")
+load("@rules_rust_prost//:defs.bzl", "rust_prost_library")
+package(default_visibility = ["//visibility:public"])
+
+proto_library(
+    name = "protocol_proto",
+    srcs = [
+        "protocol.proto",
+    ],
+)
+
+rust_prost_library(
+    name = "protocol_proto_rs",
+    proto = ":protocol_proto",
+    visibility = ["//visibility:public"],
+)

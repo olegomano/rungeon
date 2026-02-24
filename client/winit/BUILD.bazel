@@ -34,17 +34,6 @@ rust_library(
     srcs = ["primitives.rs"],
 )
 
-rust_binary(
-    name = "window_example",
-    srcs = ["main.rs"],
-    deps = [
-        ":window",
-        "@crates//:winit",
-        "@crates//:vulkanalia",
-        "@crates//:anyhow",
-        "//client/winit/basic_pipeline:rust_shader"
-    ],
-)
 
 rust_binary(
     name = "vulkan_window_main",

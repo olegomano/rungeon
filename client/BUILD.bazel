@@ -1,0 +1,19 @@
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library")
+package(default_visibility = ["//visibility:public"])
+
+
+rust_binary(
+    name = "main",
+    srcs = ["main.rs"],
+    deps = [
+        "@crates//:winit",
+        "@crates//:vulkanalia",
+        "//client/winit:vulkan_context",
+        "//client/winit/basic_pipeline:pipeline",
+        "//client/winit:window",
+        "//client/common:platform",
+        "//client/common:transform",
+        "//client/common:handle",
+        "//client/common:sparce_buffer",
+    ],
+)

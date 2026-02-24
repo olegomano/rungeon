@@ -70,9 +70,6 @@ impl PositionUvBinding {
 
 #[derive(Debug)]
 pub struct BasicPipeline {
-    swapchain: vk::SwapchainKHR,
-    swapchain_images: Vec<vk::Image>,
-    swapchain_image_views: Vec<vk::ImageView>,
     framebuffers: Vec<vk::Framebuffer>,
 
     pipeline: vk::Pipeline,
@@ -94,54 +91,18 @@ impl BasicPipeline {
             camera_ubo.data.view = Matrix4::identity();
             camera_ubo.Sync(context);
 
-            let (swapchain, surface_format, swapchain_extent) =
-                Self::create_swapchain(window, context);
+            let render_pass = Self::create_render_pass(context, context.surface_format);
 
-            let swapchain_images = context
-                .logical_device
-                .get_swapchain_images_khr(swapchain)
-                .expect("Failed to get swapchain images");
-
-            let swapchain_image_views = swapchain_images
-                .iter()
-                .map(|&image| {
-                    let create_view_info = vk::ImageViewCreateInfo::builder()
-                        .image(image)
-                        .view_type(vk::ImageViewType::_2D)
-                        .format(vk::Format::B8G8R8A8_SRGB)
-                        .components(vk::ComponentMapping {
-                            r: vk::ComponentSwizzle::IDENTITY,
-                            g: vk::ComponentSwizzle::IDENTITY,
-                            b: vk::ComponentSwizzle::IDENTITY,
-                            a: vk::ComponentSwizzle::IDENTITY,
-                        })
-                        .subresource_range(
-                            vk::ImageSubresourceRange::builder()
-                                .aspect_mask(vk::ImageAspectFlags::COLOR)
-                                .base_mip_level(0)
-                                .level_count(1)
-                                .base_array_layer(0)
-                                .layer_count(1)
-                                .build(),
-                        );
-                    context
-                        .logical_device
-                        .create_image_view(&create_view_info, None)
-                        .expect("Failed to create image view")
-                })
-                .collect::<Vec<_>>();
-
-            let render_pass = Self::create_render_pass(context, surface_format);
-
-            let framebuffers = swapchain_image_views
+            let framebuffers = context
+                .swapchain_image_views
                 .iter()
                 .map(|i| {
                     let attachments = &[*i];
                     let create_info = vk::FramebufferCreateInfo::builder()
                         .render_pass(render_pass)
                         .attachments(attachments)
-                        .width(swapchain_extent.width)
-                        .height(swapchain_extent.height)
+                        .width(context.swapchain_extent.width)
+                        .height(context.swapchain_extent.height)
                         .layers(1);
 
                     return context
@@ -172,7 +133,7 @@ impl BasicPipeline {
                 render_pass,
                 &framebuffers,
                 command_pool,
-                swapchain_extent,
+                context.swapchain_extent,
                 descriptor_set,
             );
 
@@ -187,9 +148,6 @@ impl BasicPipeline {
                 .expect("Failed to create semaphore");
 
             Self {
-                swapchain,
-                swapchain_images,
-                swapchain_image_views,
                 framebuffers: framebuffers,
                 pipeline,
                 render_pass,
@@ -207,7 +165,7 @@ impl BasicPipeline {
             let (image_index, _) = context
                 .logical_device
                 .acquire_next_image_khr(
-                    self.swapchain,
+                    context.swapchain,
                     std::u64::MAX,
                     self.image_available_semaphore,
                     vk::Fence::null(),
@@ -234,7 +192,7 @@ impl BasicPipeline {
                 .queue_submit(context.graphics_queue, &[submit_info], vk::Fence::null())
                 .expect("Failed to submit to queue");
 
-            let swapchains = &[self.swapchain];
+            let swapchains = &[context.swapchain];
             let image_indices = &[image_index];
             let present_info = vk::PresentInfoKHR::builder()
                 .wait_semaphores(signal_semaphores)
@@ -348,72 +306,6 @@ impl BasicPipeline {
         }
 
         return command_buffers;
-    }
-
-    unsafe fn create_swapchain(
-        window: &winit::window::Window,
-        vulkan_context: &vulkan_context::VulkanContext,
-    ) -> (vk::SwapchainKHR, vk::Format, vk::Extent2D) {
-        let surface_capabilities = vulkan_context
-            .instance
-            .get_physical_device_surface_capabilities_khr(
-                vulkan_context.physical_device,
-                vulkan_context.surface,
-            )
-            .expect("Failed to get surface capabilities");
-        let surface_formats = vulkan_context
-            .instance
-            .get_physical_device_surface_formats_khr(
-                vulkan_context.physical_device,
-                vulkan_context.surface,
-            )
-            .expect("Failed to get surface formats");
-
-        let surface_format = surface_formats
-            .iter()
-            .cloned()
-            .find(|f| {
-                f.format == vk::Format::B8G8R8A8_SRGB
-                    && f.color_space == vk::ColorSpaceKHR::SRGB_NONLINEAR
-            })
-            .unwrap_or_else(|| surface_formats[0]);
-
-        let extent = vk::Extent2D::builder()
-            .width(window.inner_size().width.clamp(
-                surface_capabilities.min_image_extent.width,
-                surface_capabilities.max_image_extent.width,
-            ))
-            .height(window.inner_size().height.clamp(
-                surface_capabilities.min_image_extent.height,
-                surface_capabilities.max_image_extent.height,
-            ))
-            .build();
-
-        let queue_indecies = [vulkan_context.graphics_queue_index as u32];
-        let info = vk::SwapchainCreateInfoKHR::builder()
-            .surface(vulkan_context.surface)
-            .min_image_count(surface_capabilities.min_image_count + 1)
-            .image_format(surface_format.format)
-            .image_color_space(surface_format.color_space)
-            .image_extent(extent)
-            .image_array_layers(1)
-            .image_usage(vk::ImageUsageFlags::COLOR_ATTACHMENT)
-            .image_sharing_mode(vk::SharingMode::EXCLUSIVE)
-            .queue_family_indices(&queue_indecies)
-            .pre_transform(surface_capabilities.current_transform)
-            .composite_alpha(vk::CompositeAlphaFlagsKHR::OPAQUE)
-            .present_mode(vk::PresentModeKHR::FIFO)
-            .clipped(true)
-            .old_swapchain(vk::SwapchainKHR::null());
-
-        return (
-            vulkan_context
-                .logical_device
-                .create_swapchain_khr(&info, None)
-                .expect("Failed to create swapchain"),
-            surface_format.format,
-            extent,
-        );
     }
 
     unsafe fn create_render_pass(

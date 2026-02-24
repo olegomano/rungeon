@@ -85,13 +85,13 @@ impl<R: WinitRenderer> ApplicationHandler for WinitApp<R> {
             }
             _ => (),
         }
-        self.window
-            .as_ref()
-            .expect("redraw request without a window")
-            .request_redraw();
     }
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
         self.renderer.Tick();
+        self.window
+            .as_ref()
+            .expect("redraw request without a window")
+            .request_redraw();
     }
 }

@@ -1,0 +1,5 @@
+package server;
+
+message GameState{
+    uint64 count = 1;
+}

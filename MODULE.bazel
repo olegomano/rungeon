@@ -1,17 +1,65 @@
 bazel_dep(name = "rules_rust", version = "0.65.0")
+bazel_dep(name = "rules_rust_prost", version = "0.65.0")
+bazel_dep(name = "rules_proto", version = "7.1.0")
+bazel_dep(name = "protobuf", version = "29.1", repo_name = "com_google_protobuf")
+bazel_dep(name = "toolchains_llvm", version = "1.5.0")
+
+llvm = use_extension("@toolchains_llvm//toolchain/extensions:llvm.bzl", "llvm")
+
+LLVM_VERSIONS = {
+    "": "16.0.0",
+}
+
+llvm.toolchain(
+    name = "llvm_toolchain",
+    llvm_versions = LLVM_VERSIONS,
+)
+use_repo(llvm, "llvm_toolchain", "llvm_toolchain_llvm")
+
+register_toolchains("@llvm_toolchain//:all")
 
 rust = use_extension("@rules_rust//rust:extensions.bzl", "rust")
 rust.toolchain(edition = "2021")
 use_repo(rust, "rust_toolchains")
 
 register_toolchains("@rust_toolchains//:all")
+register_toolchains("@rules_rust_prost//:all")
 
 crate = use_extension("@rules_rust//crate_universe:extensions.bzl", "crate")
-crate.spec(package = "nalgebra", version = "0.33.2")
-crate.spec(package = "winit", version = "0.30.12")
-crate.spec(package = "vulkanalia", version = "0.29.0", features = ["libloading", "provisional", "window"])
-crate.spec(package = "anyhow", version = "1.0.75")
-crate.spec(package = "clap", version = "4.5.49", features = ["derive"])
-
+crate.spec(
+    package = "nalgebra",
+    version = "0.33.2",
+)
+crate.spec(
+    package = "prost",
+    version = "0.13.1",
+)
+crate.spec(
+    default_features = False,
+    package = "prost-types",
+    version = "0.13.1",
+)
+crate.spec(
+    package = "winit",
+    version = "0.30.12",
+)
+crate.spec(
+    features = [
+        "libloading",
+        "provisional",
+        "window",
+    ],
+    package = "vulkanalia",
+    version = "0.29.0",
+)
+crate.spec(
+    package = "anyhow",
+    version = "1.0.75",
+)
+crate.spec(
+    features = ["derive"],
+    package = "clap",
+    version = "4.5.49",
+)
 crate.from_specs()
 use_repo(crate, "crates")

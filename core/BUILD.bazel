@@ -1,0 +1,25 @@
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library")
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "memory",
+    srcs = ["memory.rs"],
+    deps = [
+        "//client/common:platform",
+        "//client/common:transform",
+        "//client/common:handle",
+        "//client/common:sparce_buffer",
+    ]
+)
+
+rust_library(
+    name = "state",
+    srcs = ["state.rs"],
+    deps = [
+        "//client/common:platform",
+        "//client/common:transform",
+        "//client/common:handle",
+        "//client/common:sparce_buffer",
+        ":memory"
+    ]
+)

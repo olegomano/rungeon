@@ -51,6 +51,25 @@ rust_library(
 )
 
 rust_library(
+  name = "sparce_buffer_rc",
+  srcs = ["sparce_buffer_rc.rs"],
+  deps = [
+    ":handle"
+  ]
+)
+
+
+
+rust_library(
+  name = "versioned_buffer",
+  srcs = ["versioned_buffer.rs"],
+  deps = [
+    ":handle",
+    ":sparce_buffer_rc"
+  ]
+)
+
+rust_library(
   name = "handle_links",
   srcs = ["handle_links.rs"],
   deps = [

@@ -2,10 +2,17 @@ use std::fmt;
 use std::marker::PhantomData;
 
 #[repr(transparent)]
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug)]
 pub struct handle_t<T> {
     value: i16,
     _marker: PhantomData<T>,
+}
+
+impl<T> Copy for handle_t<T> {}
+impl<T> Clone for handle_t<T> {
+    fn clone(&self) -> handle_t<T> {
+        return *self;
+    }
 }
 
 impl<T> handle_t<T> {
@@ -69,5 +76,33 @@ impl<T> fmt::Display for handle_t<T> {
 impl<T> Default for handle_t<T> {
     fn default() -> Self {
         Self::null()
+    }
+}
+
+// Implement equality/ordering/hash manually so they are based only on the
+// internal `value` and do not impose trait bounds on `T`.
+impl<T> PartialEq for handle_t<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.value == other.value
+    }
+}
+
+impl<T> Eq for handle_t<T> {}
+
+impl<T> PartialOrd for handle_t<T> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl<T> Ord for handle_t<T> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.value.cmp(&other.value)
+    }
+}
+
+impl<T> std::hash::Hash for handle_t<T> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.value.hash(state);
     }
 }

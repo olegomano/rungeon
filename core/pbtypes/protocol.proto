@@ -1,0 +1,126 @@
+syntax = "proto3";
+import "google/protobuf/field_mask.proto";
+
+package common;
+
+//handle is something that is part of game files that both sides know about up front
+message Handle{
+    enum Type{
+        UNKNOWN = 0;
+        ITEM = 1;
+        FILE = 2;
+        SKILL = 3;
+        ACTION = 4;
+        NPC = 5;
+        PLAYER = 6;
+    };
+    uint64 id = 1;
+    Type type = 2;
+}
+
+//resource is dynamic and needs to be explicitly requested from the server
+message Resource{
+    enum Type{
+        UNKNOWN = 0;
+    }
+    uint64 id = 1;
+    Type type = 2;
+}
+
+//Dynamically managed object that server creates/deletes on the fly
+message Entity{
+    enum Type{
+        UNKNOWN = 0;
+        PLAYER = 1;
+        NPC = 2;
+        PROP = 3;
+    }
+    uint64 id = 1;
+    Type type = 2;
+}
+
+message Position{
+    float x = 1;
+    float y = 2;
+    float z = 3;
+}
+
+//attributes are a fixed stat block for a creature
+message Attributes{
+    uint32 strength = 1;
+    uint32 dexterity = 2;
+    uint32 constitution = 3;
+    uint32 intelligence = 4;
+    uint32 wisdom = 5;
+    uint32 charisma = 6;
+}
+
+//stats are dynamically changing values of a creature
+message Stats{
+    uint32 health = 1;
+    uint32 stamina = 2;
+    uint32 magika = 3;
+}
+
+message Creature{
+    google.protobuf.FieldMask update_mask = 1;
+    Entity handle = 2;
+    string name = 3;
+    Handle icon = 4;
+    Attributes attibs = 5;
+    Stats stats = 6;
+    repeated Handle items = 7;
+    Position position = 8;
+}
+
+message Prop{
+    google.protobuf.FieldMask update_mask = 1;
+    Entity handle = 2;
+    Position position = 3;
+    Handle icon = 4;
+    string name = 5;
+}
+
+// set from the server to the client every frame
+message ServerStateUpdate {
+    uint64 seq_num = 1;
+    uint64 timestamp = 2;
+    repeated Creature creatures = 3;
+    repeated Prop props = 4;
+    Handle map = 5;
+}
+
+message ServerStateUpdateAck{
+
+}
+
+//sent from client to server
+message ClientInput{
+    enum MovementInput{
+        MOVE_FORWARD = 0;
+        MOVE_BACKWARD = 1;
+        MOVE_LEFT = 2;
+        MOVE_RIGHT = 3;
+        JUMP = 4;
+        CROUCH = 5;
+    }
+    message ItemAction{
+        Handle item = 1;
+        Handle action = 2;
+    }
+
+    message Login{
+        string name = 1;
+    }
+
+    message Input{
+        oneof input {
+            MovementInput movement = 1;
+            ItemAction item_action = 2;
+        }
+    }
+    
+    uint64 timestamp = 1;
+    Entity player_handle = 2;
+    Input input = 3;
+}
