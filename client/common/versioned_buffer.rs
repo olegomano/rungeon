@@ -4,13 +4,30 @@ extern crate handle;
 extern crate sparce_buffer_rc;
 
 #[derive(Debug)]
-enum TrieValue<T: Copy + std::default::Default> {
+pub enum TrieValue<T: Copy + std::default::Default> {
     Empty,
     Trie(handle::handle_t<TrieNode<T>>),
     Leaf {
         key: i64,
         value: handle::handle_t<T>,
     },
+}
+
+#[derive(Debug)]
+pub struct TrieNode<T: Copy + std::default::Default> {
+    children: [TrieValue<T>; 256],
+    node_hash: i64,
+    level: i64,
+}
+
+pub struct Trie<T: std::default::Default + Copy> {
+    node_allocator: sparce_buffer_rc::SparceBufferRc<TrieNode<T>>,
+    data_allocator: sparce_buffer_rc::SparceBufferRc<T>,
+    root_node: handle::handle_t<TrieNode<T>>,
+}
+
+pub struct Commit<T> {
+    pending_writes: Vec<(i64, T)>,
 }
 
 impl<T: Copy + std::default::Default> Copy for TrieValue<T> {}
@@ -28,13 +45,6 @@ where
     fn default() -> Self {
         return TrieValue::Empty;
     }
-}
-
-#[derive(Debug)]
-struct TrieNode<T: Copy + std::default::Default> {
-    children: [TrieValue<T>; 256],
-    node_hash: i64,
-    level: i64,
 }
 
 impl<T> Default for TrieNode<T>
@@ -69,14 +79,16 @@ impl<T: Copy + std::default::Default> Clone for TrieNode<T> {
     }
 }
 
-pub struct Trie<T: std::default::Default + Copy> {
-    node_allocator: sparce_buffer_rc::SparceBufferRc<TrieNode<T>>,
-    data_allocator: sparce_buffer_rc::SparceBufferRc<T>,
-    root_node: handle::handle_t<TrieNode<T>>,
-}
+impl<T> Commit<T> {
+    pub fn new() -> Self {
+        return Self {
+            pending_writes: Vec::new(),
+        };
+    }
 
-pub struct Commit<T> {
-    pending_writes: Vec<(i64, T)>,
+    pub fn Write(&mut self, key: i64, value: T) {
+        self.pending_writes.push((key, value));
+    }
 }
 
 impl<T> Trie<T>
@@ -109,18 +121,43 @@ where
             self.WriteValueImpl(*key, *value, new_root);
         }
 
-        for node : removed_nodes.iter() {
-            self.node_allocator.Free(node);
-        }
+        let old_root = self.root_node;
+        self.root_node = new_root;
 
+        self.Snapshot();
+        self.ReleaseSnapshot(old_root);
         return new_root;
     }
 
+    /*
+     * Grabs a copy of the current root node, and increments the ref counters on all downstream nodes
+     */
     pub fn Snapshot(&self) -> handle::handle_t<TrieNode<T>> {
+        self.Iter(
+            &mut |h| match h {
+                TrieValue::Empty => {}
+                TrieValue::Trie(h) => self.node_allocator.BumpRef(h),
+                TrieValue::Leaf { key: _, value } => self.data_allocator.BumpRef(value),
+            },
+            self.root_node,
+        );
         return self.root_node;
     }
 
-    pub fn ReleaseSnapshot(&self, h: handle::handle_t<TrieNode<T>>) {}
+    pub fn ReleaseSnapshot(&self, h: handle::handle_t<TrieNode<T>>) {
+        self.Iter(
+            &mut |h| match h {
+                TrieValue::Empty => {}
+                TrieValue::Trie(h) => {
+                    self.node_allocator.Free(h, |v| {});
+                }
+                TrieValue::Leaf { key: _, value } => {
+                    self.data_allocator.Free(value, |v| {});
+                }
+            },
+            h,
+        );
+    }
 
     /*
      * Find the difference between the state of two trie nodes
@@ -133,10 +170,32 @@ where
         &self,
         a: handle::handle_t<TrieNode<T>>,
         b: handle::handle_t<TrieNode<T>>,
-        mut cb: F,
+        cb: &mut F,
     ) where
-        F: FnMut(i64, handle::handle_t<T>, handle::handle_t<T>),
+        F: FnMut(i64, Option<&T>, Option<&T>),
     {
+        self.Iter(
+            &mut |trie_value| match trie_value {
+                TrieValue::Empty => {}
+                TrieValue::Trie(h) => {}
+                TrieValue::Leaf {
+                    key: key,
+                    value: a_value,
+                } => {
+                    let b_value = self.FindKey(key, b);
+                    if b_value.IsNull() {
+                        cb(key, Some(&*self.data_allocator.Get(a_value)), None);
+                    } else {
+                        cb(
+                            key,
+                            Some(&*self.data_allocator.Get(a_value)),
+                            Some(&*self.data_allocator.Get(b_value)),
+                        );
+                    }
+                }
+            },
+            a,
+        );
     }
 
     /*
@@ -237,6 +296,57 @@ where
                     self.WriteValueImpl(key, value, new_child);
                 }
             }
+        }
+    }
+
+    fn FindKey(&self, key: i64, parent: handle::handle_t<TrieNode<T>>) -> handle::handle_t<T> {
+        let key_value = self.GetKeyValue(key, parent);
+        match key_value {
+            TrieValue::Empty => {
+                return handle::handle_t::null();
+            }
+            TrieValue::Trie(h) => {
+                return self.FindKey(key, h);
+            }
+            TrieValue::Leaf {
+                key: leaf_key,
+                value: leaf_value,
+            } => {
+                if key == leaf_key {
+                    return leaf_value;
+                }
+                return handle::handle_t::null();
+            }
+        }
+    }
+
+    fn Iter<F>(&self, f: &mut F, parent: handle::handle_t<TrieNode<T>>)
+    where
+        F: FnMut(TrieValue<T>),
+    {
+        let parent_node = self.node_allocator.Get(parent);
+        for i in 0..parent_node.children.len() {
+            self.IterImpl(f, parent_node.children[i]);
+        }
+    }
+
+    fn IterImpl<F>(&self, f: &mut F, parent: TrieValue<T>)
+    where
+        F: FnMut(TrieValue<T>),
+    {
+        f(parent);
+        match parent {
+            TrieValue::Empty => {}
+            TrieValue::Trie(h) => {
+                let node_value = self.node_allocator.Get(h);
+                for i in 0..node_value.children.len() {
+                    self.IterImpl(f, node_value.children[i]);
+                }
+            }
+            TrieValue::Leaf {
+                key: leaf_key,
+                value: leaf_value,
+            } => {}
         }
     }
 

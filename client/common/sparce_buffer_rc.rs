@@ -107,7 +107,10 @@ impl<T: Default> SparceBufferRc<T> {
         }
     }
 
-    pub fn Free(&self, h: handle_t<T>) {
+    pub fn Free<F>(&self, h: handle_t<T>, f: F) -> bool
+    where
+        F: Fn(&T),
+    {
         let mut should_release = false;
 
         unsafe {
@@ -119,14 +122,15 @@ impl<T: Default> SparceBufferRc<T> {
                 rc_ptr.rc -= 1;
 
                 if rc_ptr.rc == 0 {
+                    f(&rc_ptr.value);
                     should_release = true;
                 }
             }
         }
-
         if should_release {
             self.Release(h);
         }
+        return should_release;
     }
 
     fn Release(&self, h: handle_t<T>) {
