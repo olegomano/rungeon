@@ -28,16 +28,17 @@ embed_rs(
 
 
 rust_library(
-    name = "basic_pipeline",
-    srcs = ["pipeline.rs",":rust_fragment_shader",":rust_vertex_shader"],
+    name = "indirect_pipeline",
+    srcs = ["pipeline.rs", ":rust_fragment_shader", ":rust_vertex_shader"],
     crate_root = "pipeline.rs",
     deps = [
         "@crates//:nalgebra",
         "@crates//:vulkanalia",
         "@crates//:winit",
+        "//client/common:handle",
         "//client/winit/common:vulkan_context",
         "//client/winit/common:vulkan_buffer",
+        "//client/winit/common:vulkan_texture",
         "//client/winit/common:primitives",
     ],
 )
-

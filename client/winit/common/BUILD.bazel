@@ -1,0 +1,35 @@
+load("@rules_rust//rust:defs.bzl", "rust_library")
+package(default_visibility = ["//visibility:public"])
+exports_files(["knight.png", "dungeon.png"])
+
+rust_library(
+    name = "vulkan_context",
+    srcs = ["vulkan_context.rs"],
+    deps = [
+        "@crates//:winit",
+        "@crates//:vulkanalia",
+    ],
+)
+
+rust_library(
+    name = "vulkan_buffer",
+    srcs = ["vulkan_buffer.rs"],
+    deps = [
+        "@crates//:vulkanalia",
+        ":vulkan_context",
+    ],
+)
+
+rust_library(
+    name = "vulkan_texture",
+    srcs = ["vulkan_texture.rs"],
+    deps = [
+        "@crates//:vulkanalia",
+        ":vulkan_context",
+    ],
+)
+
+rust_library(
+    name = "primitives",
+    srcs = ["primitives.rs"],
+)

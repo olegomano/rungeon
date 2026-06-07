@@ -1,0 +1,9 @@
+load("//client/assets:asset.bzl", "embed_asset")
+
+package(default_visibility = ["//visibility:public"])
+
+embed_asset(
+    name = "health_potion",
+    src = "health_potion/health_potion.png",
+    variable_name = "HEALTH_POTION_DATA",
+)

@@ -1,0 +1,31 @@
+load("//client/assets:asset.bzl", "embed_asset")
+
+package(default_visibility = ["//visibility:public"])
+
+# Knight
+embed_asset(
+    name = "knight",
+    src = "knight/walk_se.png",
+    variable_name = "KNIGHT_DATA",
+)
+
+# Archer
+embed_asset(
+    name = "archer",
+    src = "archer/walk_se.png",
+    variable_name = "ARCHER_DATA",
+)
+
+# Wizard
+embed_asset(
+    name = "wizard",
+    src = "wizard/walk_se.png",
+    variable_name = "WIZARD_DATA",
+)
+
+# Elf
+embed_asset(
+    name = "elf",
+    src = "elf/walk_se.png",
+    variable_name = "ELF_DATA",
+)

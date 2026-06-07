@@ -123,3 +123,66 @@ impl<T: Default> VulkanObject<T> {
         }
     }
 }
+
+#[derive(Debug)]
+pub struct VulkanArray<T> {
+    pub buffer: VulkanBuffer,
+    pub data: Vec<T>,
+    pub dirty_bit: Vec<bool>,
+}
+
+impl<T: Default> VulkanArray<T> {
+    pub fn new(context: &VulkanContext, count: usize) -> Self {
+        unsafe {
+            return Self {
+                buffer: VulkanBuffer::new(
+                    context,
+                    vk::BufferUsageFlags::UNIFORM_BUFFER,
+                    std::mem::size_of::<T>() * count,
+                ),
+                data: Vec::new(),
+                dirty_bit: Vec::new(),
+            };
+        }
+    }
+
+    pub fn Push(&mut self, data: T) {
+        //TODO(oleg): handle re-allocating the backing buffer if we push too much
+        self.data.push(data);
+        self.dirty_bit.push(true);
+    }
+
+    pub fn Update(&mut self, index: usize, data: T) {
+        self.data[index] = data;
+        self.dirty_bit[index] = true;
+    }
+
+    //write out the current state of data to the gpu
+    pub fn Sync(&self, context: &VulkanContext) {
+        unsafe {
+            for i in 0..self.data.len() {
+                if self.dirty_bit[i] {
+                    let memory = context
+                        .logical_device
+                        .map_memory(
+                            self.buffer.vertex_buffer_memory,
+                            (i * std::mem::size_of::<T>()) as u64,
+                            std::mem::size_of::<T>() as u64,
+                            vk::MemoryMapFlags::empty(),
+                        )
+                        .expect("");
+
+                    memcpy(
+                        self.data.as_ptr() as *const T as *const u8,
+                        memory.cast(),
+                        self.buffer.size,
+                    );
+
+                    context
+                        .logical_device
+                        .unmap_memory(self.buffer.vertex_buffer_memory);
+                }
+            }
+        }
+    }
+}

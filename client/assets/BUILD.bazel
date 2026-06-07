@@ -1,0 +1,53 @@
+load("//client/assets:asset.bzl", "asset_registry")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files(["tools/gen_registry.py"])
+
+asset_registry(
+    name = "assets_registry",
+    assets = [
+        {
+            "key": "characters/knight",
+            "dep": "//client/assets/characters:knight",
+            "crate": "knight",
+            "var": "KNIGHT_DATA",
+        },
+        {
+            "key": "characters/archer",
+            "dep": "//client/assets/characters:archer",
+            "crate": "archer",
+            "var": "ARCHER_DATA",
+        },
+        {
+            "key": "characters/wizard",
+            "dep": "//client/assets/characters:wizard",
+            "crate": "wizard",
+            "var": "WIZARD_DATA",
+        },
+        {
+            "key": "items/health_potion",
+            "dep": "//client/assets/items:health_potion",
+            "crate": "health_potion",
+            "var": "HEALTH_POTION_DATA",
+        },
+        {
+            "key": "environment_decorations/barrel",
+            "dep": "//client/assets/environment_decorations:barrel",
+            "crate": "barrel",
+            "var": "BARREL_DATA",
+        },
+        {
+            "key": "floor_tiles/stone_bricks",
+            "dep": "//client/assets/floor_tiles:stone_bricks",
+            "crate": "stone_bricks",
+            "var": "STONE_BRICKS_DATA",
+        },
+        {
+            "key": "characters/elf",
+            "dep": "//client/assets/characters:elf",
+            "crate": "elf",
+            "var": "ELF_DATA",
+        },
+    ]
+)

@@ -68,5 +68,9 @@ crate.spec(
     package = "clap",
     version = "4.5.49",
 )
+crate.spec(
+    package = "image",
+    version = "0.24.9",
+)
 crate.from_specs()
 use_repo(crate, "crates")

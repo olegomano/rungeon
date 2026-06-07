@@ -327,7 +327,8 @@ impl VulkanContext {
             .queue_family_index(graphics_queue_index as u32)
             .queue_priorities(&queue_priorities);
 
-        let device_features = vk::PhysicalDeviceFeatures::builder();
+        let device_features = vk::PhysicalDeviceFeatures::builder()
+            .multi_draw_indirect(true);
 
         let layers = if Self::VALIDATION_ENABLED {
             vec![Self::VALIDATION_LAYER.as_ptr()]

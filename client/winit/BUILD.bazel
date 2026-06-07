@@ -10,39 +10,23 @@ rust_library(
     ],
 )
 
-rust_library(
-    name = "vulkan_context",
-    srcs = ["vulkan_context.rs"],
-    deps = [
-        "@crates//:winit",
-        "@crates//:vulkanalia",
-    ],
-)
-
-rust_library(
-    name = "vulkan_buffer",
-    srcs = ["vulkan_buffer.rs"],
-    deps = [
-        "@crates//:vulkanalia",
-        ":vulkan_context"
-    ],
-)
-
-
-rust_library(
-    name = "primitives",
-    srcs = ["primitives.rs"],
-)
-
 
 rust_binary(
     name = "vulkan_window_main",
-    srcs = ["vulkan_window.rs"],
+    srcs = ["main.rs"],
+    compile_data = ["//client/winit/common:knight.png"],
     deps = [
         ":window",
         "@crates//:winit",
         "@crates//:vulkanalia",
-        ":vulkan_context",
-        "//client/winit/basic_pipeline:pipeline"
+        "@crates//:clap",
+        "@crates//:nalgebra",
+        "@crates//:image",
+        "//client/common:handle",
+        "//client/winit/common:vulkan_context",
+        "//client/winit/common:primitives",
+        "//client/winit/common:vulkan_texture",
+        "//client/winit/basic_pipeline",
+        "//client/winit/indirect_pipeline",
     ],
 )

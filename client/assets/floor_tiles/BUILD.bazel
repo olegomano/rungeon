@@ -1,0 +1,9 @@
+load("//client/assets:asset.bzl", "embed_asset")
+
+package(default_visibility = ["//visibility:public"])
+
+embed_asset(
+    name = "stone_bricks",
+    src = "stone_bricks/stone_bricks.png",
+    variable_name = "STONE_BRICKS_DATA",
+)

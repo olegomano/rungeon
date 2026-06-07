@@ -42,14 +42,14 @@ impl PositionUvBinding {
     unsafe fn new(binding_index: u32, vertex_location: u32, uv_location: u32) -> Self {
         let binding = vk::VertexInputBindingDescription::builder()
             .binding(binding_index)
-            .stride(24 as u32)
+            .stride(std::mem::size_of::<primitives::Vertex>() as u32)
             .input_rate(vk::VertexInputRate::VERTEX)
             .build();
 
         let vertex = vk::VertexInputAttributeDescription::builder()
             .binding(binding_index)
             .location(vertex_location)
-            .format(vk::Format::R32G32B32_SFLOAT)
+            .format(vk::Format::R32G32B32A32_SFLOAT)
             .offset(0)
             .build();
 
@@ -57,7 +57,7 @@ impl PositionUvBinding {
             .binding(binding_index)
             .location(uv_location)
             .format(vk::Format::R32G32_SFLOAT)
-            .offset(12)
+            .offset(16)
             .build();
 
         return Self {
@@ -160,6 +160,15 @@ impl BasicPipeline {
         }
     }
 
+    pub fn SetCameraView(&mut self, context: &vulkan_context::VulkanContext, view: Matrix4<f32>) {
+        let aspect = context.swapchain_extent.width as f32 / context.swapchain_extent.height as f32;
+        let mut proj = Matrix4::new_perspective(aspect, 45.0_f32.to_radians(), 0.1, 100.0);
+        proj[(1, 1)] *= -1.0; // Invert Y for Vulkan
+
+        self.camera_ubo.data.view = proj * view;
+        self.camera_ubo.Sync(context);
+    }
+
     pub fn Render(&mut self, context: &vulkan_context::VulkanContext) {
         unsafe {
             let (image_index, _) = context
@@ -171,11 +180,6 @@ impl BasicPipeline {
                     vk::Fence::null(),
                 )
                 .expect("Failed to acquire next image");
-
-            self.camera_ubo.data.view =
-                Matrix4::from_axis_angle(&Vector3::z_axis(), 1.0_f32.to_radians())
-                    * self.camera_ubo.data.view;
-            self.camera_ubo.Sync(context);
 
             let wait_semaphores = &[self.image_available_semaphore];
             let signal_semaphores = &[self.render_finished_semaphore];
@@ -236,9 +240,9 @@ impl BasicPipeline {
         let rect = vulkan_buffer::VulkanBuffer::new(
             context,
             vk::BufferUsageFlags::VERTEX_BUFFER,
-            primitives::QUAD_TRIANGLES.len() * std::mem::size_of::<primitives::Vertex>(),
+            primitives::CUBE_TRIANGLES.len() * std::mem::size_of::<primitives::Vertex>(),
         );
-        rect.Write(&primitives::QUAD_TRIANGLES, context);
+        rect.Write(&primitives::CUBE_TRIANGLES, context);
 
         for (i, command_buffer) in command_buffers.iter().enumerate() {
             let info = vk::CommandBufferBeginInfo::builder();
@@ -292,7 +296,7 @@ impl BasicPipeline {
             );
             context.logical_device.cmd_draw(
                 *command_buffer,
-                primitives::QUAD_TRIANGLES.len() as u32,
+                primitives::CUBE_TRIANGLES.len() as u32,
                 1,
                 0,
                 0,

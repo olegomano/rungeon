@@ -76,3 +76,20 @@ rust_library(
     ":handle"
   ]
 )
+
+rust_library(
+  name = "image",
+  srcs = ["image.rs"],
+  deps = [
+    ":handle",
+    "@crates//:image",
+  ]
+)
+
+rust_library(
+  name = "mesh",
+  srcs = ["mesh.rs"],
+  deps = [
+    ":handle",
+  ]
+)

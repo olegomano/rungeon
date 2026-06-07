@@ -1,0 +1,9 @@
+load("//client/assets:asset.bzl", "embed_asset")
+
+package(default_visibility = ["//visibility:public"])
+
+embed_asset(
+    name = "barrel",
+    src = "barrel/barrel.png",
+    variable_name = "BARREL_DATA",
+)

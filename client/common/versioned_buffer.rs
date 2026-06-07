@@ -130,6 +130,16 @@ where
     }
 
     /*
+     * Helper method that writes a single key into the Trie
+     * Should generally be avoided and ApplyNewCommit should be used instead to batch multiple writes together
+     */
+    pub fn WriteKey(&mut self, key: i64, value: T) -> handle::handle_t<TrieNode<T>> {
+        let mut commit = Commit::<T>::new();
+        commit.Write(key, value);
+        return self.ApplyCommit(commit);
+    }
+
+    /*
      * Grabs a copy of the current root node, and increments the ref counters on all downstream nodes
      */
     pub fn Snapshot(&self) -> handle::handle_t<TrieNode<T>> {
