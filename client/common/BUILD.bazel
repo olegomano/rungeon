@@ -13,7 +13,9 @@ rust_binary(
 
 rust_library(
   name = "handle",
-  srcs = ["handle.rs"]
+  srcs = ["handle.rs"],
+  # Make the crate name match what we use in tests
+  crate_name = "handle",
 )
 
 rust_library(
@@ -55,7 +57,9 @@ rust_library(
   srcs = ["sparce_buffer_rc.rs"],
   deps = [
     ":handle"
-  ]
+  ],
+  # Make the crate name match what we use in tests
+  crate_name = "sparce_buffer_rc",
 )
 
 
@@ -69,13 +73,7 @@ rust_library(
   ]
 )
 
-rust_library(
-  name = "handle_links",
-  srcs = ["handle_links.rs"],
-  deps = [
-    ":handle"
-  ]
-)
+
 
 rust_library(
   name = "image",
@@ -84,6 +82,24 @@ rust_library(
     ":handle",
     "@crates//:image",
   ]
+)
+
+rust_library(
+  name = "property",
+  srcs = ["property.rs"],
+  deps = [
+    ":handle",
+  ]
+)
+
+rust_library(
+  name = "property_tree",
+  srcs = ["property_tree.rs"],
+  deps = [
+    ":property",
+    ":handle",
+    ":sparce_buffer_rc",
+  ],
 )
 
 rust_library(

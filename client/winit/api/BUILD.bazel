@@ -1,0 +1,14 @@
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+rust_library(
+    name = "api",
+    srcs = [
+        "struct.rs",
+    ],
+    deps = [
+        "//common/handle",
+        "//common/image",
+        "//common/sparse_buffer",
+        "//common/transform",
+    ],
+)

@@ -1,153 +1,203 @@
-use handle::handle_t;
-use std::cell::{Cell, UnsafeCell};
-use std::ops::{Deref, DerefMut};
+use std::alloc::Layout;
+use std::cell::Cell;
+use std::cell::UnsafeCell;
+use std::ptr::NonNull;
 
-#[repr(C)]
-#[derive(Default)]
-
-struct RcPtr<T: Default> {
-    rc: i32,
+struct ValueRefCount<T: Clone> {
+    ref_count: i32,
     value: T,
 }
 
-struct Node<T: Default> {
-    buffer: [RcPtr<T>; 64],
-    bitmask: u64, //1 = free, 0 = taken
-    next: i32,
+struct MemChunk<T: Clone> {
+    ptr: NonNull<ValueRefCount<T>>,
+    bitfield: u32,
 }
 
-impl<T: Default> Default for Node<T> {
-    fn default() -> Self {
-        return Self {
-            buffer: std::array::from_fn(|_| RcPtr::default()),
-            bitmask: 0xFFFFFFFFFFFFFFFF,
-            next: -1,
+impl<T: Clone> MemChunk<T> {
+    fn capacity() -> usize {
+        32
+    }
+
+    fn new() -> Self {
+        let new_layout = Layout::array::<ValueRefCount<T>>(Self::capacity()).unwrap();
+        let ptr = unsafe {
+            let raw_ptr = std::alloc::alloc(new_layout) as *mut ValueRefCount<T>;
+            NonNull::new(raw_ptr).expect("Allocation failed")
         };
+        Self {
+            ptr: ptr,
+            bitfield: 0xFFFFFFFF, // All 32 bits set for 32 slots
+        }
+    }
+
+    fn GetMut<'a>(&'a mut self, index: usize) -> &'a mut T {
+        debug_assert!(index < Self::capacity(), "Index out of bounds");
+        unsafe {
+            let ptr = self.ptr.as_ptr().add(index);
+            &mut (*ptr).value
+        }
+    }
+
+    fn Free(&self) -> bool {
+        self.bitfield != 0
+    }
+
+    fn Allocate(&mut self, v: T) -> Option<u8> {
+        if !self.Free() {
+            return None;
+        }
+        // Find the highest set bit (31 - leading_zeros gives us 0-31)
+        let highest_bit = self.bitfield.leading_zeros();
+        let index = 31 - highest_bit;
+        unsafe {
+            let dest_ptr = self.ptr.as_ptr().add(index as usize);
+            std::ptr::write(
+                dest_ptr,
+                ValueRefCount {
+                    ref_count: 1,
+                    value: v,
+                },
+            );
+        }
+        self.bitfield &= !(1u32 << index);
+        Some(index as u8)
+    }
+
+    fn IncrementRc(&mut self, index: usize) -> i32 {
+        debug_assert!(index < Self::capacity(), "Index out of bounds");
+        unsafe {
+            let ptr = self.ptr.as_ptr().add(index);
+            (*ptr).ref_count += 1;
+            (*ptr).ref_count
+        }
+    }
+
+    fn DecrementRc(&mut self, index: usize) -> i32 {
+        debug_assert!(index < Self::capacity(), "Index out of bounds");
+        unsafe {
+            let ptr = self.ptr.as_ptr().add(index);
+            (*ptr).ref_count -= 1;
+            (*ptr).ref_count
+        }
+    }
+
+    fn FreeChunk(&mut self) {
+        let element_count = Self::capacity();
+        let layout = Layout::array::<ValueRefCount<T>>(element_count).unwrap();
+        unsafe {
+            std::alloc::dealloc(self.ptr.as_ptr() as *mut u8, layout);
+        }
     }
 }
 
-pub struct SparceBufferRc<T: Default> {
-    nodes: UnsafeCell<Vec<Box<Node<T>>>>,
-    free_list: Cell<i32>,
+/*
+ *  Represents a slab based allocator that is reference counted
+ */
+pub struct SparceBufferRc<T: Clone> {
+    chunk_buffer: UnsafeCell<Vec<MemChunk<T>>>,
+    free_chunks: Cell<i32>,
 }
 
-pub struct BufferGuard<'a, T> {
-    value: &'a mut T,
-}
-
-impl<'a, T> Deref for BufferGuard<'a, T> {
-    type Target = T;
-    fn deref(&self) -> &Self::Target {
-        self.value
+impl<T: Clone> Drop for SparceBufferRc<T> {
+    fn drop(&mut self) {
+        let chunks = unsafe { &mut *self.chunk_buffer.get() };
+        for mut chunk in chunks.drain(..) {
+            chunk.FreeChunk();
+        }
     }
 }
 
-impl<'a, T> DerefMut for BufferGuard<'a, T> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        self.value
-    }
-}
-
-impl<T: Default> SparceBufferRc<T> {
+impl<T: Clone> SparceBufferRc<T> {
     pub fn new() -> Self {
         Self {
-            nodes: UnsafeCell::new(Vec::new()),
-            free_list: Cell::new(-1),
+            chunk_buffer: UnsafeCell::new(Vec::new()),
+            free_chunks: Cell::new(0),
         }
     }
 
-    pub fn Get(&self, h: handle_t<T>) -> BufferGuard<'_, T> {
-        let node_idx = h.Node() as usize;
-        let buf_idx = h.Value() as usize;
+    pub fn Allocate(&self, value: T) -> handle::handle_t<T> {
+        // Get the chunks vector
+        let chunk_buffer = unsafe { &mut *self.chunk_buffer.get() };
 
-        unsafe {
-            let vec_ptr = self.nodes.get();
-            let node = &mut *(*vec_ptr)[node_idx];
-            let value = &mut node.buffer[buf_idx].value;
-            BufferGuard { value }
-        }
-    }
-
-    pub fn Allocate(&self, default: T) -> handle_t<T> {
-        unsafe {
-            let nodes = &mut *self.nodes.get();
-
-            if self.free_list.get() == -1 {
-                let new_node = Box::new(Node::default());
-                nodes.push(new_node);
-                self.free_list.set((nodes.len() - 1) as i32);
-            }
-
-            let node_idx = self.free_list.get() as usize;
-            let node = &mut *nodes[node_idx];
-
-            let buffer_index = node.bitmask.trailing_zeros();
-            let entry = &mut node.buffer[buffer_index as usize];
-            entry.rc = 1;
-            entry.value = default;
-
-            node.bitmask &= !(1 << buffer_index);
-            if node.bitmask == 0 {
-                let next_free = node.next;
-                self.free_list.set(next_free);
-                node.next = -1;
-            }
-
-            handle_t::from(0, node_idx as u8, buffer_index as u8)
-        }
-    }
-
-    pub fn BumpRef(&self, h: handle_t<T>) {
-        unsafe {
-            let nodes = &mut *self.nodes.get();
-            if let Some(node) = nodes.get_mut(h.Node() as usize) {
-                let rc_ptr = &mut node.buffer[h.Value() as usize];
-                rc_ptr.rc += 1;
+        // Find a chunk with free space
+        let mut chunk_index = None;
+        for (index, chunk) in chunk_buffer.iter_mut().enumerate() {
+            if chunk.Free() {
+                chunk_index = Some(index);
+                break;
             }
         }
+
+        // If no chunk with free space found, create a new one
+        let chunk_index = if let Some(index) = chunk_index {
+            index
+        } else {
+            let new_chunk = MemChunk::<T>::new();
+            chunk_buffer.push(new_chunk);
+            chunk_buffer.len() - 1
+        };
+
+        // Decrement free chunks count
+        let current_free = self.free_chunks.get();
+        self.free_chunks.set(current_free - 1);
+
+        // Allocate in the selected chunk
+        let chunk = &mut chunk_buffer[chunk_index];
+        let instance = chunk.Allocate(value).expect("Allocation failed");
+        handle::handle_t::from(0, chunk_index as u8, instance)
     }
 
-    pub fn Free<F>(&self, h: handle_t<T>, f: F) -> bool
+    pub fn Copy(&self, h: handle::handle_t<T>) -> handle::handle_t<T> {
+        let chunks = self.MutChunks();
+        debug_assert!(
+            (h.Node() as usize) < chunks.len(),
+            "Node index out of bounds"
+        );
+        chunks[h.Node() as usize].IncrementRc(h.Instance() as usize);
+        h
+    }
+
+    pub fn GetMut<'a>(&'a self, h: handle::handle_t<T>) -> &'a mut T {
+        let chunks = self.MutChunks();
+        debug_assert!(
+            (h.Node() as usize) < chunks.len(),
+            "Node index out of bounds"
+        );
+        chunks[h.Node() as usize].GetMut(h.Instance() as usize)
+    }
+
+    pub fn Free<F>(&self, h: handle::handle_t<T>, destructor: F) -> bool
     where
-        F: Fn(&T),
+        F: FnOnce(T),
     {
-        let mut should_release = false;
-
-        unsafe {
-            let nodes = &mut *self.nodes.get();
-
-            if let Some(node) = nodes.get_mut(h.Node() as usize) {
-                let rc_ptr = &mut node.buffer[h.Value() as usize];
-
-                rc_ptr.rc -= 1;
-
-                if rc_ptr.rc == 0 {
-                    f(&rc_ptr.value);
-                    should_release = true;
-                }
-            }
+        let chunks = self.MutChunks();
+        debug_assert!(
+            (h.Node() as usize) < chunks.len(),
+            "Node index out of bounds"
+        );
+        let rc = chunks[h.Node() as usize].DecrementRc(h.Instance() as usize);
+        if rc == 0 {
+            // Get the value before freeing
+            let value_ptr = unsafe {
+                chunks[h.Node() as usize]
+                    .ptr
+                    .as_ptr()
+                    .add(h.Instance() as usize)
+            };
+            let value = unsafe { std::ptr::read(value_ptr) };
+            destructor(value.value);
+            // Mark the slot as free in the bitfield
+            chunks[h.Node() as usize].bitfield |= 1u32 << h.Instance();
+            // Increment free chunks count
+            let current_free = self.free_chunks.get();
+            self.free_chunks.set(current_free + 1);
+            true
+        } else {
+            false
         }
-        if should_release {
-            self.Release(h);
-        }
-        return should_release;
     }
 
-    fn Release(&self, h: handle_t<T>) {
-        unsafe {
-            let nodes = &mut *self.nodes.get();
-            let node_idx = h.Node() as usize;
-            let slot_idx = h.Value() as usize;
-
-            if let Some(node) = nodes.get_mut(node_idx) {
-                node.bitmask |= 1 << slot_idx;
-                let old_free_head = self.free_list.get();
-
-                if old_free_head != node_idx as i32 {
-                    node.next = old_free_head;
-                    self.free_list.set(node_idx as i32);
-                }
-            }
-        }
+    fn MutChunks(&self) -> &mut Vec<MemChunk<T>> {
+        unsafe { &mut *self.chunk_buffer.get() }
     }
 }

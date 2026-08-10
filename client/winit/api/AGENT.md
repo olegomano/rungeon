@@ -9,6 +9,5 @@ The renderer may intenrally copy it and and do what it pleases with the copy, bu
 # Public Api Structs
 - Sprite
 
-
 # Public Api Functions
 - AddSprite() -> handle::handle_t

@@ -35,20 +35,20 @@ impl<T> SparceBuffer<T> {
         }
         next[254].set(NULL_INDEX);
 
-        return Self {
+        Self {
             buffer: std::array::from_fn(|_| UnsafeCell::new(None)),
             next: next,
             free_list: Cell::new(0),
             alloc_count: Cell::new(0),
-        };
+        }
     }
 
     pub fn Iter(&self) -> SparceBufferIter<T> {
-        return SparceBufferIter {
+        SparceBufferIter {
             buffer: self,
             index: 0,
             iter_count: 0,
-        };
+        }
     }
 
     pub fn Allocate(&self, value: T) -> handle::handle_t<T> {
@@ -70,7 +70,7 @@ impl<T> SparceBuffer<T> {
             self.free_list
                 .set(self.next[self.free_list.get() as usize].get());
         }
-        return result;
+        result
     }
 
     pub fn Size(&self) -> usize {
@@ -98,7 +98,7 @@ impl<T> SparceBuffer<T> {
                 free: 0xffffffff as u32,
             }));
         }
-        return optional_box.as_deref_mut().expect("");
+        optional_box.as_deref_mut().expect("")
     }
 }
 
@@ -106,7 +106,7 @@ impl<'a, T> Iterator for SparceBufferIter<'a, T> {
     type Item = &'a T;
 
     fn next(&mut self) -> Option<Self::Item> {
-        while true {
+        loop {
             //we already iterated all the nodes
             if self.iter_count >= self.buffer.Size() as i32 {
                 return None;
@@ -126,7 +126,6 @@ impl<'a, T> Iterator for SparceBufferIter<'a, T> {
                 return Some(&self.buffer.GetNode(node as u8)[instance]);
             }
         }
-        return None;
     }
 }
 
@@ -134,17 +133,13 @@ impl<T> Index<usize> for Node<T> {
     type Output = T;
 
     fn index(&self, index: usize) -> &T {
-        unsafe {
-            return &*self.data[index].as_ptr();
-        }
+        unsafe { &*self.data[index].as_ptr() }
     }
 }
 
 impl<T> IndexMut<usize> for Node<T> {
     fn index_mut(&mut self, index: usize) -> &mut T {
-        unsafe {
-            return &mut *self.data[index].as_mut_ptr();
-        }
+        unsafe { &mut *self.data[index].as_mut_ptr() }
     }
 }
 
@@ -155,7 +150,7 @@ impl<T> Index<handle::handle_t<T>> for SparceBuffer<T> {
         unsafe {
             let optional_box = &*self.buffer[index.Node() as usize].get();
             let node = optional_box.as_deref().unwrap();
-            return &node[index.Instance() as usize];
+            &node[index.Instance() as usize]
         }
     }
 }
@@ -165,7 +160,7 @@ impl<T> IndexMut<handle::handle_t<T>> for SparceBuffer<T> {
         unsafe {
             let optional_box = &mut *self.buffer[index.Node() as usize].get();
             let node: &mut Node<T> = optional_box.as_deref_mut().unwrap();
-            return &mut node[index.Instance() as usize];
+            &mut node[index.Instance() as usize]
         }
     }
 }

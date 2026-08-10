@@ -2,9 +2,18 @@ load("@rules_rust//rust:defs.bzl", "rust_test")
 package(default_visibility = ["//visibility:public"])
 
 rust_test(
-	name = "versioned_buffer_test",
-	srcs = ["test_versioned_buffer.rs"],
-	deps = [
-		"//client/common:versioned_buffer",
-	],
+    name = "versioned_buffer_test",
+    srcs = ["test_versioned_buffer.rs"],
+    deps = [
+        "//client/common:versioned_buffer",
+    ],
+)
+
+rust_test(
+    name = "sparce_buffer_rc_test",
+    srcs = ["sparce_buffer_rc_test.rs"],
+    deps = [
+        "//client/common:handle",
+        "//client/common:sparce_buffer_rc",
+    ],
 )

@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>WASM Hello World</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <h1>WASM Hello World</h1>
+    <button id="call-wasm">Call WASM</button>
+    <div id="output">Waiting...</div>
+
+    <script type="module">
+        import init, { hello_world } from './pkg/web_lib.js';
+
+        async function run() {
+            await init();
+            console.log("WASM loaded!");
+
+            document.getElementById('call-wasm').addEventListener('click', () => {
+                const result = hello_world();
+                document.getElementById('output').textContent = result;
+            });
+        }
+
+        run();
+    </script>
+</body>
+</html>

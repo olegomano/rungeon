@@ -1,6 +1,7 @@
 extern crate handle;
 
 use std::fmt;
+use image;
 
 /// Describes how an embedded or external blob should be interpreted.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
