@@ -2,7 +2,6 @@
 load("@rules_python//python:defs.bzl", "py_binary")
 load("@rules_rust//rust:defs.bzl", "rust_shared_library")
 load("@rules_rust_wasm_bindgen//:defs.bzl", "rust_wasm_bindgen")
-load(":wasm_transition.bzl", "wasm_target")
 
 rust_shared_library(
     name = "web_wasm",
@@ -21,21 +20,13 @@ rust_wasm_bindgen(
     wasm_file = ":web_wasm",
 )
 
-# Wrapper that applies WASM platform transition to generate_bindings
-# This ensures generate_bindings is built with --platforms=@rules_rust//rust/platform:wasm
-# without affecting other targets in this package (like py_binary)
-wasm_target(
-    name = "wasm_bindings",
-    src = ":generate_bindings",
-)
-
 py_binary(
     name = "serve",
     srcs = ["server.py"],
     data = [
         "static/index.html",
         "static/style.css",
-        ":wasm_bindings",
+        ":generate_bindings",
     ],
     main = "server.py",
 )
@@ -44,9 +35,6 @@ exports_files([
     "src/lib.rs",
     "Cargo.toml",
     "server.py",
-    "start_server.sh",
-    "build.sh",
-    "wasm_transition.bzl",
     "static/index.html",
     "static/style.css",
 ])

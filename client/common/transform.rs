@@ -1,6 +1,6 @@
 extern crate nalgebra;
 use nalgebra::{Matrix4, Point3, Quaternion, Unit, UnitQuaternion, Vector3, Vector4};
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Transform {
     pub matrix: Matrix4<f32>,
 }

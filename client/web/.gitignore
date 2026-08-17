@@ -1,0 +1,15 @@
+# Cargo build artifacts
+Cargo.lock
+target/
+pkg/
+
+# IDE
+.idea/
+.vscode/
+
+# OS
+.DS_Store
+
+# Generated bindings
+*.js
+*.wasm

@@ -11,4 +11,5 @@ pub fn hello_world() -> String {
 pub fn start() {
     // Log to browser console
     web_sys::console::log_1(&JsValue::from_str("WASM initialized!"));
+    let a = 10;
 }

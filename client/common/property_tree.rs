@@ -109,15 +109,14 @@ impl PropertyTree {
     pub fn CreateProperty(
         &mut self,
         object: property::ObjectId,
-        t: property::PropertyType,
-        _v: property::PropertyValue,
+        value: property::PropertyValue,
     ) -> property::PropertyKey {
         let property_id = property::PropertyId { id: self.property_id_generator.id };
         self.property_id_generator.id +=1;
 
         property::PropertyKey {
             object_id: object,
-            property_type: t,
+            property_type: value.Type(),
             instance: property_id,
         }
     }
@@ -149,15 +148,18 @@ impl PropertyTree {
             };
             self.version.id += 1;
 
+            let prop_type = p.key.property_type;
+            let prop_key = p.key.clone();
+
             let new_property_handle = self
                 .property_buffer
-                .entry(p.key.property_type.clone())
+                .entry(prop_type)
                 .or_insert_with(|| sparce_buffer_rc::SparceBufferRc::new())
                 .Allocate(p);
 
             self.properties.insert(
                 property::VersionedPropertyKey {
-                    key: p.key,
+                    key: prop_key.clone(),
                     version: property_version,
                 },
                 new_property_handle,
@@ -165,7 +167,7 @@ impl PropertyTree {
 
             //old_property_handle is the previous state we had for this property
             if let Some((old_property_handle, _old_version)) =
-                object.members.insert(p.key.instance, (new_property_handle, property_version))
+                object.members.insert(prop_key.instance, (new_property_handle, property_version))
             {
                 // Only track mutations if we have a valid previous state
                 if !self.prev_state.IsNull() {
@@ -173,26 +175,27 @@ impl PropertyTree {
                     //if we already had a previous state tracked
                     // we can free it in this case since no-one has snapshotted it meaning no readers on it
                     if let Some(very_old_property_handle) =
-                        delta.mutations.insert(p.key.clone(), old_property_handle)
+                        delta.mutations.insert(prop_key.clone(), old_property_handle)
                     {
                         self.property_buffer
-                            .get_mut(&p.key.property_type)
+                            .get_mut(&prop_type)
                             .expect("Property buffer not found")
                             .Free(very_old_property_handle, |_v| {});
 
                         // Find and remove the old versioned property key
-                        if let Some((key_to_remove, _)) = self
+                        let key_to_remove = self
                             .properties
                             .iter()
-                            .find(|(k, _)| k.key == p.key && k.version.id < property_version.id)
-                        {
-                            self.properties.remove(key_to_remove);
+                            .find(|(k, _)| k.key == prop_key && k.version.id < property_version.id)
+                            .map(|(k, _)| k.clone());
+                        if let Some(key_to_remove) = key_to_remove {
+                            self.properties.remove(&key_to_remove);
                         }
                     }
                 } else {
                     // No previous state, just free the old property directly
                     self.property_buffer
-                        .get_mut(&p.key.property_type)
+                        .get_mut(&prop_type)
                         .expect("Property buffer not found")
                         .Free(old_property_handle, |_v| {});
                 }
