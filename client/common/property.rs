@@ -4,10 +4,52 @@ extern crate transform;
 use handle::handle_t;
 use mesh::Mesh;
 use transform::Transform;
-use std::mem::{discriminant, Discriminant};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct PropertyType(pub Discriminant<PropertyValue>);
+pub enum PropertyType {
+    RendererTransform,
+    RendererMesh,
+    RendererMaterial,
+    RendererVisibility,
+    PhysicsRigidBody,
+    PhysicsCollider,
+    PhysicsMass,
+    NetworkPosition,
+    NetworkVelocity,
+    NetworkHealth,
+    Null,
+}
+
+impl PropertyType {
+    pub fn default_value(&self) -> PropertyValue {
+        match self {
+            PropertyType::RendererTransform => PropertyValue::RendererTransform(Transform::Identity()),
+            PropertyType::RendererMesh => PropertyValue::RendererMesh(handle_t::null()),
+            PropertyType::RendererMaterial => PropertyValue::RendererMaterial(Material {
+                base_color: [1.0, 1.0, 1.0, 1.0],
+                metallic: 0.0,
+                roughness: 0.5,
+            }),
+            PropertyType::RendererVisibility => PropertyValue::RendererVisibility(true),
+            PropertyType::PhysicsRigidBody => PropertyValue::PhysicsRigidBody(RigidBody {
+                mass: 1.0,
+                velocity: nalgebra::Vector3::zeros(),
+                angular_velocity: nalgebra::Vector3::zeros(),
+                is_kinematic: false,
+            }),
+            PropertyType::PhysicsCollider => PropertyValue::PhysicsCollider(Collider {
+                shape: ColliderShape::Sphere(0.5),
+                offset: nalgebra::Vector3::zeros(),
+                is_trigger: false,
+            }),
+            PropertyType::PhysicsMass => PropertyValue::PhysicsMass(1.0),
+            PropertyType::NetworkPosition => PropertyValue::NetworkPosition(nalgebra::Vector3::zeros()),
+            PropertyType::NetworkVelocity => PropertyValue::NetworkVelocity(nalgebra::Vector3::zeros()),
+            PropertyType::NetworkHealth => PropertyValue::NetworkHealth(100),
+            PropertyType::Null => PropertyValue::Null,
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Version {
@@ -64,7 +106,19 @@ pub enum PropertyValue {
 
 impl PropertyValue {
     pub fn Type(&self) -> PropertyType {
-        PropertyType(discriminant(self))
+        match self {
+            PropertyValue::RendererTransform(_) => PropertyType::RendererTransform,
+            PropertyValue::RendererMesh(_) => PropertyType::RendererMesh,
+            PropertyValue::RendererMaterial(_) => PropertyType::RendererMaterial,
+            PropertyValue::RendererVisibility(_) => PropertyType::RendererVisibility,
+            PropertyValue::PhysicsRigidBody(_) => PropertyType::PhysicsRigidBody,
+            PropertyValue::PhysicsCollider(_) => PropertyType::PhysicsCollider,
+            PropertyValue::PhysicsMass(_) => PropertyType::PhysicsMass,
+            PropertyValue::NetworkPosition(_) => PropertyType::NetworkPosition,
+            PropertyValue::NetworkVelocity(_) => PropertyType::NetworkVelocity,
+            PropertyValue::NetworkHealth(_) => PropertyType::NetworkHealth,
+            PropertyValue::Null => PropertyType::Null,
+        }
     }
 }
 

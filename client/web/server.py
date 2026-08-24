@@ -15,7 +15,7 @@ RUNFILES_DIR = get_runfiles_dir()
 ROUTE_MAP = {}
 
 def init_routes():
-    print(f"Scanning runfiles in: {RUNFILES_DIR}")
+    print(f"Scanning in: {RUNFILES_DIR}")
     for root, _, files in os.walk(RUNFILES_DIR):
         for f in files:
             full_path = os.path.join(root, f)
@@ -34,12 +34,6 @@ def init_routes():
                 ROUTE_MAP[f"/{f}"] = full_path
                 ROUTE_MAP[f"/pkg/{f}"] = full_path
 
-                # Set up aliases if index.html requests /pkg/web_lib.* instead of /pkg/web_wasm.*
-                if f.endswith(".js"):
-                    ROUTE_MAP["/pkg/web_lib.js"] = full_path
-                elif f.endswith("_bg.wasm"):
-                    ROUTE_MAP["/pkg/web_lib.wasm"] = full_path
-
 class WASMHandler(http.server.SimpleHTTPRequestHandler):
     extensions_map = {
         **http.server.SimpleHTTPRequestHandler.extensions_map,
@@ -49,24 +43,56 @@ class WASMHandler(http.server.SimpleHTTPRequestHandler):
         ".html": "text/html",
     }
 
+    def end_headers(self):
+        self.send_header("Cross-Origin-Opener-Policy", "same-origin")
+        self.send_header("Cross-Origin-Embedder-Policy", "require-corp")
+        super().end_headers()
+
     def do_GET(self):
         clean_path = self.path.split("?")[0].split("#")[0]
 
+        # Handle favicon requests gracefully
+        if clean_path == "/favicon.ico":
+            self.send_response(204)
+            self.end_headers()
+            return
+
+        # Serve JS files from source
+        if clean_path == "/src/main.js":
+            js_path = os.path.join(RUNFILES_DIR, "client/web/src/main.js")
+            if not os.path.isfile(js_path):
+                js_path = os.path.join(os.getcwd(), "client/web/src/main.js")
+            if serve_file(self, js_path, "text/javascript"):
+                return
+
+        if clean_path == "/src/worker.js":
+            js_path = os.path.join(RUNFILES_DIR, "client/web/src/worker.js")
+            if not os.path.isfile(js_path):
+                js_path = os.path.join(os.getcwd(), "client/web/src/worker.js")
+            if serve_file(self, js_path, "text/javascript"):
+                return
+
+        # Serve route-mapped files
         if clean_path in ROUTE_MAP:
             target_file = ROUTE_MAP[clean_path]
             if os.path.isfile(target_file):
-                self.send_response(200)
                 ext = os.path.splitext(target_file)[1]
                 content_type = self.extensions_map.get(ext, "application/octet-stream")
-                self.send_header("Content-Type", content_type)
-                self.send_header("Content-Length", str(os.path.getsize(target_file)))
-                self.end_headers()
-
-                with open(target_file, "rb") as f:
-                    self.wfile.write(f.read())
+                serve_file(self, target_file, content_type)
                 return
 
         super().do_GET()
+
+def serve_file(handler, path, content_type):
+    if os.path.isfile(path):
+        handler.send_response(200)
+        handler.send_header("Content-Type", content_type)
+        handler.send_header("Content-Length", str(os.path.getsize(path)))
+        handler.end_headers()
+        with open(path, "rb") as f:
+            handler.wfile.write(f.read())
+        return True
+    return False
 
 if __name__ == "__main__":
     init_routes()
@@ -79,6 +105,8 @@ if __name__ == "__main__":
     socketserver.TCPServer.allow_reuse_address = True
     with socketserver.TCPServer(("", PORT), WASMHandler) as httpd:
         print(f"Server running at http://localhost:{PORT}")
+        print("WARNING: SharedArrayBuffer requires HTTPS or localhost")
+        print(f"  Headers sent: COOP=same-origin, COEP=require-corp")
         try:
             httpd.serve_forever()
         except KeyboardInterrupt:

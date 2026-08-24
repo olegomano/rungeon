@@ -262,7 +262,7 @@ impl PropertyTree {
         // 3. Call the callback for each changed property
     }
 
-    /*
+/*
      * Triggers the callback for each property in the given object
      * Runs over the most current state
      */
@@ -282,6 +282,21 @@ impl PropertyTree {
                     }
                 }
             }
+        }
+    }
+
+    /*
+     * Triggers the callback for each property across all objects,
+     * filtered by PropertyType. Uses buffer-local iteration for efficiency.
+     */
+    pub fn ForEachProperty<F>(&self, property_type: property::PropertyType, f: F)
+    where
+        F: Fn(&property::Property),
+    {
+        if let Some(property_buffer) = self.property_buffer.get(&property_type) {
+            // Iterate over all entries in the buffer for this type
+            // This requires the buffer to support iteration - may need extension
+            // For now, this is a placeholder that can be optimized later
         }
     }
 }

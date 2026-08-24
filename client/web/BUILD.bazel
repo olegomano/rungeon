@@ -26,6 +26,8 @@ py_binary(
     data = [
         "static/index.html",
         "static/style.css",
+        "src/main.js",
+        "src/worker.js",
         ":generate_bindings",
     ],
     main = "server.py",
@@ -33,7 +35,8 @@ py_binary(
 
 exports_files([
     "src/lib.rs",
-    "Cargo.toml",
+    "src/main.js",
+    "src/worker.js",
     "server.py",
     "static/index.html",
     "static/style.css",
