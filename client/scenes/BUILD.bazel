@@ -1,0 +1,19 @@
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "test_scene",
+    srcs = [
+        "test_scene.rs",
+    ],
+    crate_name = "test_scene",
+    deps = [
+        "//client/common:input",
+        "//client/common:platform",
+        "//client/common:property",
+        "//client/common:property_tree",
+        "//client/common:transform",
+        "@crates//:nalgebra",
+    ],
+)

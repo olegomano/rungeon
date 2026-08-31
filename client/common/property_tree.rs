@@ -10,8 +10,8 @@ use property::Version;
 use std::collections::HashMap;
 
 pub struct Object {
-    object_id: ObjectId,
-    members: HashMap<PropertyId, (handle::handle_t<Property>, Version)>,
+    pub object_id: ObjectId,
+    pub members: HashMap<PropertyId, (handle::handle_t<Property>, Version)>,
 }
 
 /*
@@ -19,7 +19,7 @@ pub struct Object {
  */
 pub struct TreeState {
     // object_id -> Object
-    objects: HashMap<ObjectId, Object>,
+    pub objects: HashMap<ObjectId, Object>,
 }
 
 #[derive(Clone)]
@@ -39,16 +39,16 @@ pub struct TreeDelta {
 }
 
 pub struct PropertyTree {
-    property_buffer: HashMap<property::PropertyType, sparce_buffer_rc::SparceBufferRc<Property>>,
+    pub property_buffer: HashMap<property::PropertyType, sparce_buffer_rc::SparceBufferRc<Property>>,
     delta_buffer: sparce_buffer_rc::SparceBufferRc<TreeDelta>,
 
-    current_state: TreeState,
+    pub current_state: TreeState,
     prev_state: handle::handle_t<TreeDelta>,
     prev_state_finalized: bool,
     properties: HashMap<property::VersionedPropertyKey, handle::handle_t<Property>>,
     version: property::Version,
-    object_id_generator : property::ObjectId,
-    property_id_generator : property::PropertyId,
+    object_id_generator: property::ObjectId,
+    property_id_generator: property::PropertyId,
 }
 
 impl PropertyTree {
@@ -63,12 +63,8 @@ impl PropertyTree {
             prev_state_finalized: false,
             properties: HashMap::new(),
             version: Version { id: 0 },
-            object_id_generator : property::ObjectId{
-                id : 0,
-            },
-            property_id_generator : property::PropertyId{
-                id : 0,
-            },
+            object_id_generator: property::ObjectId { id: 0 },
+            property_id_generator: property::PropertyId { id: 0 },
         };
 
         // Allocate the initial previous state delta
@@ -86,8 +82,10 @@ impl PropertyTree {
 
     pub fn CreateObject(&mut self) -> property::ObjectId {
         // Generate a new unique ObjectId
-        let object_id = property::ObjectId { id: self.object_id_generator.id };
-        self.object_id_generator.id +=1;
+        let object_id = property::ObjectId {
+            id: self.object_id_generator.id,
+        };
+        self.object_id_generator.id += 1;
 
         // Create a new Object and add it to the current state
         let object = Object {
@@ -111,8 +109,10 @@ impl PropertyTree {
         object: property::ObjectId,
         value: property::PropertyValue,
     ) -> property::PropertyKey {
-        let property_id = property::PropertyId { id: self.property_id_generator.id };
-        self.property_id_generator.id +=1;
+        let property_id = property::PropertyId {
+            id: self.property_id_generator.id,
+        };
+        self.property_id_generator.id += 1;
 
         property::PropertyKey {
             object_id: object,
@@ -166,16 +166,18 @@ impl PropertyTree {
             );
 
             //old_property_handle is the previous state we had for this property
-            if let Some((old_property_handle, _old_version)) =
-                object.members.insert(prop_key.instance, (new_property_handle, property_version))
+            if let Some((old_property_handle, _old_version)) = object
+                .members
+                .insert(prop_key.instance, (new_property_handle, property_version))
             {
                 // Only track mutations if we have a valid previous state
                 if !self.prev_state.IsNull() {
                     let delta = self.delta_buffer.GetMut(self.prev_state);
                     //if we already had a previous state tracked
                     // we can free it in this case since no-one has snapshotted it meaning no readers on it
-                    if let Some(very_old_property_handle) =
-                        delta.mutations.insert(prop_key.clone(), old_property_handle)
+                    if let Some(very_old_property_handle) = delta
+                        .mutations
+                        .insert(prop_key.clone(), old_property_handle)
                     {
                         self.property_buffer
                             .get_mut(&prop_type)
@@ -262,7 +264,7 @@ impl PropertyTree {
         // 3. Call the callback for each changed property
     }
 
-/*
+    /*
      * Triggers the callback for each property in the given object
      * Runs over the most current state
      */

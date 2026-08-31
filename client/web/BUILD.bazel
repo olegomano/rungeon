@@ -1,16 +1,30 @@
-# client/web/BUILD.bazel
-load("@rules_python//python:defs.bzl", "py_binary")
+load("@rules_rust//rust:defs.bzl", "rust_binary")
+load("@rules_rust//rust:defs.bzl", "rust_library")
 load("@rules_rust//rust:defs.bzl", "rust_shared_library")
 load("@rules_rust_wasm_bindgen//:defs.bzl", "rust_wasm_bindgen")
+load("@rules_python//python:defs.bzl", "py_binary")
+
+package(default_visibility = ["//visibility:public"])
 
 rust_shared_library(
     name = "web_wasm",
-    srcs = ["src/lib.rs"],
+    srcs = [
+        "src/lib.rs",
+        "src/platform.rs",
+    ],
+    crate_name = "web_wasm",
     edition = "2021",
     deps = [
         "@crates//:wasm-bindgen",
         "@crates//:web-sys",
         "@crates//:js-sys",
+        "@crates//:nalgebra",
+        "//client/common:input",
+        "//client/common:platform",
+        "//client/common:transform",
+        "//client/common:property",
+        "//client/common:property_tree",
+        "//client/scenes:test_scene",
     ],
 )
 
@@ -36,7 +50,7 @@ py_binary(
 exports_files([
     "src/lib.rs",
     "src/main.js",
-    "src/worker.js",
+    "src/platform.rs",
     "server.py",
     "static/index.html",
     "static/style.css",
